@@ -1743,6 +1743,11 @@ if (nrow(bivariate_subgroup_results) > 0) {
     bivariate_subgroup_results$Subgroup
   )
   
+  # 强制使用你给的 pal：避免 ggplot 自动补色导致“颜色太花”
+  mod_levels <- sort(unique(as.character(bivariate_subgroup_results$Moderator)))
+  col_map <- rep(pal, length.out = length(mod_levels))
+  names(col_map) <- mod_levels
+  
   plot_height <- max(
     10,
     min(
@@ -1763,11 +1768,26 @@ if (nrow(bivariate_subgroup_results) > 0) {
       width = 0.70,
       colour = "white"
     ) +
+    geom_text(
+      aes(
+        label = ifelse(
+          is.finite(AUC),
+          sprintf("%.3f", AUC),
+          ""
+        ),
+        y = pmin(AUC + 0.02, 1.05)
+      ),
+      vjust = 0.5,
+      size = 4,
+      colour = "black",
+      family = font_family
+    ) +
     coord_flip() +
     scale_y_continuous(
-      limits = c(0, 1),
+      limits = c(0, 1.05),
       breaks = seq(0, 1, by = 0.1)
     ) +
+    scale_fill_manual(values = col_map) +
     labs(
       title = "Bivariate SROC AUC by Subgroup",
       subtitle = "Sensitivity and Specificity bivariate random-effects models",
@@ -1816,7 +1836,6 @@ if (nrow(bivariate_subgroup_results) > 0) {
   print(p_subgroup_auc)
   dev.off()
 }
-
 # -------------------- 26. Completion message --------------------
 
 cat("\n============================================================\n")
