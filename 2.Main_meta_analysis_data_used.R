@@ -118,8 +118,12 @@ prepare_metric <- function(data, metric_name, value_col, lower_col, upper_col) {
   lower_ci <- to_prop(data[[lower_col]])
   upper_ci <- to_prop(data[[upper_col]])
   
+  # 关键：CI边界也要bound到(0,1)
   effect_analysis <- bound_prop(effect)
-  se_logit <- se_from_ci(lower_ci, upper_ci)
+  lower_ci_b <- bound_prop(lower_ci)
+  upper_ci_b <- bound_prop(upper_ci)
+  
+  se_logit <- se_from_ci(lower_ci_b, upper_ci_b)
   
   result <- data.frame(
     Study = study,
