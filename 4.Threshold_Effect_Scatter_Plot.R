@@ -12,7 +12,7 @@ library(ggplot2)
 
 # -------------------- 2. 设置输入与输出路径 --------------------
 input_file <- "C:/Users/30399/Desktop/LLM/main.txt"
-output_dir <- "C:/Users/30399/Desktop/LLM/6.Threshold"
+output_dir <- "C:/Users/30399/Desktop/LLM/4.Threshold"
 
 if (!file.exists(input_file)) {
   stop("未找到原始数据文件：", input_file)
