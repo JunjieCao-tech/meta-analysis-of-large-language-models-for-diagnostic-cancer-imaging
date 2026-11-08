@@ -53,10 +53,10 @@ suppressPackageStartupMessages({
 
 # -------------------- 2. Paths --------------------
 
-work_dir <- "C:/Users/30399/Desktop/LLM"
+work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 
 if (!dir.exists(work_dir)) {
-  work_dir <- "C:/Users/30399/OneDrive/Desktop/LLM"
+  work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 }
 
 if (!dir.exists(work_dir)) {
@@ -64,12 +64,14 @@ if (!dir.exists(work_dir)) {
 }
 
 input_file <- file.path(work_dir, "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
 
 if (!file.exists(input_file)) {
   stop("main.txt was not found.")
 }
 
-output_dir <- file.path(work_dir, "6.Meta_regression")
+output_dir <- Sys.getenv("ANALYSIS_OUTPUT_DIR", unset = file.path(work_dir, "6.Meta_regression"))
 
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
@@ -464,44 +466,17 @@ write.csv(
 # -------------------- 11. Get numerator and denominator --------------------
 
 get_events_totals <- function(data, outcome) {
-  
-  if (outcome == "Sensitivity") {
-    return(list(
-      events = data$TP_cc,
-      totals = data$TP_cc + data$FN_cc
-    ))
-  }
-  
-  if (outcome == "Specificity") {
-    return(list(
-      events = data$TN_cc,
-      totals = data$TN_cc + data$FP_cc
-    ))
-  }
-  
-  if (outcome == "Accuracy") {
-    return(list(
-      events = data$TP_cc + data$TN_cc,
-      totals = data$TP_cc + data$FP_cc +
-        data$FN_cc + data$TN_cc
-    ))
-  }
-  
-  if (outcome == "PPV") {
-    return(list(
-      events = data$TP_cc,
-      totals = data$TP_cc + data$FP_cc
-    ))
-  }
-  
-  if (outcome == "NPV") {
-    return(list(
-      events = data$TN_cc,
-      totals = data$TN_cc + data$FN_cc
-    ))
-  }
-  
-  stop("Unknown outcome.")
+  # Same metric-specific correction as Figure 2; bivariate cells stay separate.
+  pair <- switch(outcome,
+    Sensitivity=list(e=data$TP, f=data$FN),
+    Specificity=list(e=data$TN, f=data$FP),
+    Accuracy=list(e=data$TP+data$TN, f=data$FP+data$FN),
+    PPV=list(e=data$TP, f=data$FP),
+    NPV=list(e=data$TN, f=data$FN), stop("Unknown outcome"))
+  zero <- pair$e==0 | pair$f==0
+  e <- pair$e + ifelse(zero, 0.5, 0)
+  f <- pair$f + ifelse(zero, 0.5, 0)
+  list(events=e, totals=e+f)
 }
 
 # -------------------- 12. Prepare data for one moderator --------------------
@@ -596,7 +571,7 @@ extract_univariate_pool <- function(fit, outcome) {
       estimate_logit + 1.96 * se_logit
     ),
     Tau2 = safe_value(fit$tau2),
-    I2_percent = safe_value(fit$I2),
+    I2_percent = 100 * max(0, (fit$QE - (fit$k - 1)) / fit$QE),
     QE = safe_value(fit$QE),
     QE_p = safe_value(fit$QEp),
     stringsAsFactors = FALSE
@@ -898,15 +873,9 @@ calculate_sroc_auc <- function(fit) {
     )
   }
   
-  auc <- sum(
-    diff(fpr_grid) *
-      (
-        sensitivity_curve[-1] +
-          sensitivity_curve[-length(sensitivity_curve)]
-      ) / 2
-  )
-  
-  max(0, min(1, auc))
+  slope <- if (is.finite(parameters$tau_fpr2) && parameters$tau_fpr2 > 0 &&
+               is.finite(parameters$covariance)) parameters$covariance / parameters$tau_fpr2 else 0
+  sroc_full_auc(parameters$sensitivity_logit, parameters$fpr_logit, slope)
 }
 
 extract_bivariate_pool <- function(
@@ -1517,7 +1486,6 @@ cat(
 sink()
 
 # -------------------- 22. Figure 1: Univariate Pseudo R2 --------------------
-
 if (nrow(univariate_contribution_results) > 0) {
   
   p_univariate_r2 <- ggplot(
@@ -1532,6 +1500,13 @@ if (nrow(univariate_contribution_results) > 0) {
       position = position_dodge(width = 0.80),
       width = 0.70,
       colour = "white"
+    ) +
+    geom_text(
+      aes(label = sprintf("%.1f", Pseudo_R2_percent)),
+      position = position_dodge(width = 0.80),
+      vjust = -0.35,
+      size = 14 / .pt,
+      family = font_family
     ) +
     geom_hline(
       yintercept = 0,
@@ -1571,17 +1546,22 @@ if (nrow(univariate_contribution_results) > 0) {
       ),
       axis.title = element_text(
         face = "bold",
-        colour = pal[1]
+        colour = pal[1],
+        size = 14
       ),
       axis.text.x = element_text(
         angle = 32,
         hjust = 1,
-        colour = "black"
+        colour = "black",
+        size = 14
       ),
       axis.text.y = element_text(
-        colour = "black"
+        colour = "black",
+        size = 14
       ),
-      legend.position = "bottom"
+      legend.position = "bottom",
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 14, face = "bold")
     )
   
   open_pdf(
@@ -1596,9 +1576,7 @@ if (nrow(univariate_contribution_results) > 0) {
   print(p_univariate_r2)
   dev.off()
 }
-
 # -------------------- 23. Figure 2: Bivariate Joint Pseudo R2 --------------------
-
 if (nrow(bivariate_contribution_results) > 0) {
   
   p_bivariate_r2 <- ggplot(
@@ -1611,6 +1589,12 @@ if (nrow(bivariate_contribution_results) > 0) {
     geom_col(
       fill = pal[2],
       width = 0.65
+    ) +
+    geom_text(
+      aes(label = sprintf("%.1f", Joint_Pseudo_R2_percent)),
+      vjust = -0.35,
+      size = 14 / .pt,
+      family = font_family
     ) +
     geom_hline(
       yintercept = 0,
@@ -1640,15 +1624,18 @@ if (nrow(bivariate_contribution_results) > 0) {
       ),
       axis.title = element_text(
         face = "bold",
-        colour = pal[1]
+        colour = pal[1],
+        size = 14
       ),
       axis.text.x = element_text(
         angle = 32,
         hjust = 1,
-        colour = "black"
+        colour = "black",
+        size = 14
       ),
       axis.text.y = element_text(
-        colour = "black"
+        colour = "black",
+        size = 14
       )
     )
   
@@ -1664,9 +1651,7 @@ if (nrow(bivariate_contribution_results) > 0) {
   print(p_bivariate_r2)
   dev.off()
 }
-
 # -------------------- 24. Figure 3: Maximum subgroup AUC difference --------------------
-
 if (nrow(bivariate_contribution_results) > 0) {
   
   p_auc_difference <- ggplot(
@@ -1679,6 +1664,12 @@ if (nrow(bivariate_contribution_results) > 0) {
     geom_col(
       fill = pal[3],
       width = 0.65
+    ) +
+    geom_text(
+      aes(label = sprintf("%.3f", Maximum_subgroup_AUC_difference)),
+      vjust = -0.35,
+      size = 14 / .pt,
+      family = font_family
     ) +
     geom_hline(
       yintercept = 0,
@@ -1708,15 +1699,18 @@ if (nrow(bivariate_contribution_results) > 0) {
       ),
       axis.title = element_text(
         face = "bold",
-        colour = pal[1]
+        colour = pal[1],
+        size = 14
       ),
       axis.text.x = element_text(
         angle = 32,
         hjust = 1,
-        colour = "black"
+        colour = "black",
+        size = 14
       ),
       axis.text.y = element_text(
-        colour = "black"
+        colour = "black",
+        size = 14
       )
     )
   
@@ -1733,109 +1727,69 @@ if (nrow(bivariate_contribution_results) > 0) {
   dev.off()
 }
 
-# -------------------- 25. Figure 4: Subgroup-specific AUC --------------------
-
-if (nrow(bivariate_subgroup_results) > 0) {
-  
-  bivariate_subgroup_results$Subgroup_label <- paste0(
-    bivariate_subgroup_results$Moderator,
-    ": ",
-    bivariate_subgroup_results$Subgroup
-  )
-  
-  # 强制使用你给的 pal：避免 ggplot 自动补色导致“颜色太花”
-  mod_levels <- sort(unique(as.character(bivariate_subgroup_results$Moderator)))
-  col_map <- rep(pal, length.out = length(mod_levels))
-  names(col_map) <- mod_levels
-  
-  plot_height <- max(
-    10,
-    min(
-      28,
-      0.45 * nrow(bivariate_subgroup_results) + 5
-    )
-  )
-  
-  p_subgroup_auc <- ggplot(
-    bivariate_subgroup_results,
-    aes(
-      x = reorder(Subgroup_label, AUC),
-      y = AUC,
-      fill = Moderator
-    )
-  ) +
-    geom_col(
-      width = 0.70,
-      colour = "white"
-    ) +
-    geom_text(
-      aes(
-        label = ifelse(
-          is.finite(AUC),
-          sprintf("%.3f", AUC),
-          ""
-        ),
-        y = pmin(AUC + 0.02, 1.05)
-      ),
-      vjust = 0.5,
-      size = 4,
-      colour = "black",
-      family = font_family
-    ) +
-    coord_flip() +
-    scale_y_continuous(
-      limits = c(0, 1.05),
-      breaks = seq(0, 1, by = 0.1)
-    ) +
-    scale_fill_manual(values = col_map) +
-    labs(
-      title = "Bivariate SROC AUC by Subgroup",
-      subtitle = "Sensitivity and Specificity bivariate random-effects models",
-      x = "Subgroup",
-      y = "SROC AUC",
-      fill = "Subgroup factor"
-    ) +
-    theme_classic(
-      base_family = font_family,
-      base_size = 14
-    ) +
-    theme(
-      plot.title = element_text(
-        face = "bold",
-        size = 16,
-        hjust = 0.5,
-        colour = pal[1]
-      ),
-      plot.subtitle = element_text(
-        hjust = 0.5,
-        colour = pal[2]
-      ),
-      axis.title = element_text(
-        face = "bold",
-        colour = pal[1]
-      ),
-      axis.text.x = element_text(
-        colour = "black"
-      ),
-      axis.text.y = element_text(
-        colour = "black",
-        size = 12
-      ),
-      legend.position = "bottom"
-    )
-  
-  open_pdf(
-    file.path(
-      output_dir,
-      "Figure_4_Bivariate_SROC_AUC_by_Subgroup.pdf"
-    ),
-    width = 18,
-    height = plot_height
-  )
-  
-  print(p_subgroup_auc)
-  dev.off()
+# -------------------- 25. Figure 4: Bivariate SROC AUC by subgroup --------------------
+# Use the fitted subgroup results, including the shared full-domain AUC calculation.
+if (nrow(bivariate_subgroup_results) == 0L) {
+  stop("No bivariate subgroup results are available for Figure 4")
 }
+auc_plot_data <- bivariate_subgroup_results[, c("Moderator", "Subgroup", "Studies", "AUC")]
+if (anyNA(auc_plot_data) || any(!is.finite(auc_plot_data$AUC)) ||
+    any(auc_plot_data$AUC < 0 | auc_plot_data$AUC > 1) ||
+    anyDuplicated(paste(auc_plot_data$Moderator, auc_plot_data$Subgroup, sep = "|"))) {
+  stop("Invalid or duplicate bivariate subgroup AUC results for Figure 4")
+}
+factor_order <- c("Country", "Imaging modality", "Input category", "Publication year",
+                  "Sample size", "Study design", "Tumour organ")
+factor_colours <- setNames(c(pal[1], pal[2], pal[3], pal[4], pal[5], pal[1], pal[2]),
+                          factor_order)
+if (!all(auc_plot_data$Moderator %in% factor_order)) {
+  stop("Add a colour for each new subgroup factor in Figure 4")
+}
+auc_plot_data <- auc_plot_data[order(-auc_plot_data$AUC,
+                                    auc_plot_data$Moderator,
+                                    auc_plot_data$Subgroup), ]
+auc_plot_data$Rank <- seq_len(nrow(auc_plot_data))
+auc_plot_data$Label <- paste(auc_plot_data$Moderator, auc_plot_data$Subgroup, sep = ": ")
+auc_plot_data$AUC_label <- sprintf("%.3f", auc_plot_data$AUC)
+write.csv(auc_plot_data,
+          file.path(output_dir, "Figure_4_Bivariate_SROC_AUC_by_Subgroup_Data.csv"),
+          row.names = FALSE, fileEncoding = "UTF-8")
+auc_plot_data$Label <- factor(auc_plot_data$Label, levels = rev(auc_plot_data$Label))
+auc_plot_data$Moderator <- factor(auc_plot_data$Moderator, levels = factor_order)
+p_subgroup_auc <- ggplot(auc_plot_data,
+                        aes(x = Label, y = AUC, fill = Moderator)) +
+  geom_col(width = 0.67) +
+  geom_text(aes(label = AUC_label), hjust = -0.15,
+            size = text_size_12, family = font_family, colour = "black") +
+  scale_fill_manual(values = factor_colours, breaks = factor_order, drop = TRUE) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.1),
+                     expand = expansion(mult = c(0, 0.02))) +
+  coord_flip(clip = "off") +
+  labs(title = "Bivariate SROC AUC by Subgroup",
+       subtitle = "Sensitivity and Specificity bivariate random-effects models",
+       x = "Subgroup", y = "SROC AUC", fill = "Subgroup factor") +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
+  theme_classic(base_family = font_family, base_size = 14) +
+  theme(plot.title = element_text(face = "bold", size = 16, hjust = 0.5, colour = pal[1]),
+        plot.subtitle = element_text(hjust = 0.5, colour = pal[2]),
+        axis.title = element_text(face = "bold", colour = pal[1]),
+        axis.text = element_text(colour = "black", size = 12),
+        legend.position = "bottom", legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        plot.margin = margin(15, 25, 15, 15))
+figure4_pdf <- file.path(output_dir, "Figure_4_Bivariate_SROC_AUC_by_Subgroup.pdf")
+figure4_png <- file.path(output_dir, "Figure_4_Bivariate_SROC_AUC_by_Subgroup.png")
+figure4_height <- max(10, 3.5 + 0.5 * nrow(auc_plot_data))
+open_pdf(figure4_pdf, width = 18, height = figure4_height)
+print(p_subgroup_auc)
+invisible(dev.off())
+ggsave(figure4_png, plot = p_subgroup_auc, width = 18, height = figure4_height,
+       units = "in", dpi = 300, bg = "white", limitsize = FALSE)
+if (!all(file.exists(c(figure4_pdf, figure4_png))) ||
+    any(file.info(c(figure4_pdf, figure4_png))$size <= 0)) {
+  stop("Figure 4 was not successfully exported")
+}
+
 # -------------------- 26. Completion message --------------------
 
 cat("\n============================================================\n")
