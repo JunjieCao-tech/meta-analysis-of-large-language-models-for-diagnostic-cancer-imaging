@@ -22,10 +22,10 @@ suppressPackageStartupMessages({
 })
 
 # -------------------- 2. Working directory --------------------
-work_dir <- "C:/Users/30399/Desktop/LLM"
+work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 
 if (!dir.exists(work_dir)) {
-  work_dir <- "C:/Users/30399/OneDrive/Desktop/LLM"
+  work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 }
 
 if (!dir.exists(work_dir)) {
@@ -33,6 +33,10 @@ if (!dir.exists(work_dir)) {
 }
 
 input_file <- file.path(work_dir, "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
+output_dir <- file.path(work_dir, "3.SROC")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 if (!file.exists(input_file)) {
   stop("main.txt was not found in the working directory.")
@@ -56,25 +60,13 @@ text_size_14 <- 14 / .pt
 text_size_12 <- 12 / .pt
 
 # -------------------- 5. Read data --------------------
-dat_raw <- tryCatch(
-  read.delim(
-    input_file,
-    header = TRUE,
-    sep = "\t",
-    check.names = FALSE,
-    stringsAsFactors = FALSE,
-    fileEncoding = "UTF-8-BOM"
-  ),
-  error = function(e) {
-    read.delim(
-      input_file,
-      header = TRUE,
-      sep = "\t",
-      check.names = FALSE,
-      stringsAsFactors = FALSE,
-      fileEncoding = "GB18030"
-    )
-  }
+dat_raw <- read.delim(
+  input_file,
+  header = TRUE,
+  sep = "\t",
+  check.names = FALSE,
+  stringsAsFactors = FALSE,
+  fileEncoding = "GB18030"
 )
 
 # -------------------- 6. Identify columns --------------------
@@ -242,8 +234,10 @@ fixed_spec <- plogis(as.numeric(coef(fit_spec_fixed)))
 random_sens_uni <- plogis(as.numeric(coef(fit_sens_random)))
 random_spec_uni <- plogis(as.numeric(coef(fit_spec_random)))
 
-I2_sens <- fit_sens_random$I2
-I2_spec <- fit_spec_random$I2
+univariate_summary <- read.csv(file.path(work_dir, "2.Main_meta_analysis_data_used", "Main_Meta_Analysis_Summary.csv"))
+I2_sens <- univariate_summary$I2_percent[univariate_summary$Outcome == "Sensitivity"]
+I2_spec <- univariate_summary$I2_percent[univariate_summary$Outcome == "Specificity"]
+stopifnot(length(I2_sens)==1L, length(I2_spec)==1L)
 
 # -------------------- 10. Bivariate random-effects model --------------------
 long_dat <- do.call(
@@ -329,7 +323,7 @@ if (abs(G_matrix[2, 2]) < 1e-10) {
   sroc_slope <- G_matrix[1, 2] / G_matrix[2, 2]
 }
 
-fpr_grid <- seq(0.001, 0.999, length.out = 1000)
+fpr_grid <- seq(0.0001, 0.9999, length.out = 5000)
 
 sroc_dat <- data.frame(
   FPR = fpr_grid,
@@ -338,25 +332,16 @@ sroc_dat <- data.frame(
   )
 )
 
-AUC <- sum(
-  diff(sroc_dat$FPR) *
-    (head(sroc_dat$Sensitivity, -1) +
-       tail(sroc_dat$Sensitivity, -1)) / 2
-)
+AUC <- sroc_full_auc(mu_sens, mu_fpr, sroc_slope)
 
-AUC_quality <- ifelse(
-  AUC >= 0.90, "Excellent diagnostic performance",
-  ifelse(
-    AUC >= 0.80, "Good diagnostic performance",
-    ifelse(
-      AUC >= 0.70, "Acceptable diagnostic performance",
-      ifelse(
-        AUC >= 0.60, "Limited diagnostic performance",
-        "Poor diagnostic performance"
-      )
-    )
-  )
-)
+# Heterogeneity belongs to the fitted bivariate model (logit sensitivity/FPR).
+tau2_sens_biv <- as.numeric(G_matrix[1, 1])
+tau2_fpr_biv <- as.numeric(G_matrix[2, 2])
+rho_sens_fpr_biv <- as.numeric(G_matrix[1, 2] / sqrt(G_matrix[1, 1] * G_matrix[2, 2]))
+write.csv(data.frame(Tau2_sensitivity=tau2_sens_biv, Tau2_FPR=tau2_fpr_biv,
+                     Rho_sensitivity_FPR=rho_sens_fpr_biv, Scale="Logit",
+                     Method="Bivariate REML"),
+          file.path(output_dir, "SROC_Bivariate_Heterogeneity.csv"), row.names=FALSE)
 
 # -------------------- 13. Confidence and prediction regions --------------------
 ellipse_points <- function(center, covariance_matrix,
@@ -417,19 +402,9 @@ result_label <- paste0(
   "DOR: ", sprintf("%.2f", DOR),
   " (", sprintf("%.2f", DOR_lcl),
   "–", sprintf("%.2f", DOR_ucl), ")\n",
-  "I² sensitivity: ", sprintf("%.1f%%", I2_sens), "\n",
-  "I² specificity: ", sprintf("%.1f%%", I2_spec), "\n\n",
-  AUC_quality
-)
-
-fixed_random_label <- paste0(
-  "Fixed-effect pooled estimates:\n",
-  "Sensitivity = ", percent(fixed_sens, accuracy = 0.1),
-  "; Specificity = ", percent(fixed_spec, accuracy = 0.1),
-  "\n\n",
-  "Random-effects pooled estimates:\n",
-  "Sensitivity = ", percent(random_sens_uni, accuracy = 0.1),
-  "; Specificity = ", percent(random_spec_uni, accuracy = 0.1)
+  "τ² (logit sensitivity): ", sprintf("%.4f", tau2_sens_biv), "\n",
+  "τ² (logit FPR): ", sprintf("%.4f", tau2_fpr_biv), "\n",
+  "ρ (logit sensitivity, FPR): ", sprintf("%.4f", rho_sens_fpr_biv)
 )
 
 # -------------------- 15. Create SROC plot --------------------
@@ -514,27 +489,9 @@ sroc_plot <- ggplot() +
     size = text_size_14,
     color = "#222222",
     fill = alpha("white", 0.94),
-    label.size = 0.35,
+    linewidth = 0.35,
     label.r = unit(0.18, "lines"),
     label.padding = unit(0.35, "lines")
-  ) +
-  
-  # Fixed/random results box remains in the lower-right of main plot
-  annotate(
-    "label",
-    x = 0.975,
-    y = 0.025,
-    label = fixed_random_label,
-    hjust = 1,
-    vjust = 0,
-    family = "Arial",
-    fontface = "plain",
-    size = text_size_12,
-    color = "#222222",
-    fill = alpha("white", 0.90),
-    label.size = 0.35,
-    label.r = unit(0.18, "lines"),
-    label.padding = unit(0.32, "lines")
   ) +
   
   scale_size_continuous(
@@ -659,7 +616,7 @@ sroc_plot <- ggplot() +
 
 # -------------------- 16. Export high-quality vector PDF --------------------
 pdf_file <- file.path(
-  work_dir,
+  output_dir,
   "SROC_Bivariate_Random_Effects_Meta_Analysis.pdf"
 )
 
@@ -676,7 +633,7 @@ dev.off()
 
 # -------------------- 17. Export study data --------------------
 study_data_file <- file.path(
-  work_dir,
+  output_dir,
   "SROC_Analysis_Data_Used.csv"
 )
 
@@ -692,7 +649,7 @@ write.csv(
 
 # -------------------- 18. Export results --------------------
 results_file <- file.path(
-  work_dir,
+  output_dir,
   "SROC_Bivariate_Random_Effects_Results.txt"
 )
 
@@ -719,10 +676,12 @@ results_text <- c(
     " to ", sprintf("%.3f", DOR_ucl), ")"
   ),
   paste0("Area under SROC curve (AUC): ", sprintf("%.4f", AUC)),
-  paste0("Interpretation: ", AUC_quality),
+  paste0("Bivariate tau-squared, logit sensitivity: ", sprintf("%.4f", tau2_sens_biv)),
+  paste0("Bivariate tau-squared, logit FPR: ", sprintf("%.4f", tau2_fpr_biv)),
+  paste0("Bivariate rho, logit sensitivity/FPR: ", sprintf("%.4f", rho_sens_fpr_biv)),
   "",
-  paste0("I-squared for sensitivity: ", sprintf("%.1f%%", I2_sens)),
-  paste0("I-squared for specificity: ", sprintf("%.1f%%", I2_spec))
+  paste0("Univariate REML I-squared for sensitivity: ", sprintf("%.1f%%", I2_sens)),
+  paste0("Univariate REML I-squared for specificity: ", sprintf("%.1f%%", I2_spec))
 )
 
 writeLines(results_text, con = results_file, useBytes = TRUE)
