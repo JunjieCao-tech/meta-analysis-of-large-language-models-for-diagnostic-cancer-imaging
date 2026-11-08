@@ -15,14 +15,16 @@ suppressPackageStartupMessages({
 })
 
 # 2. Working directory
-work_dir <- "C:/Users/30399/Desktop/LLM"
+work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 if (!dir.exists(work_dir)) {
-  work_dir <- "C:/Users/30399/OneDrive/Desktop/LLM"
+  work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 }
 if (!dir.exists(work_dir)) {
   stop("Working directory was not found.")
 }
 input_file <- file.path(work_dir, "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
 output_dir <- file.path(work_dir, "10.Clinical_application")
 if (!file.exists(input_file)) {
   stop("main.txt was not found.")
@@ -524,7 +526,7 @@ report_lines <- c(
     "LR+ = ", format_number(pooled_LR_positive),
     " (95% CI ", format_number(pooled_LR_positive_lower), "-", format_number(pooled_LR_positive_upper), ")"
   ),
-  paste0("I2 = ", format_number(meta_LR_positive$I2, 1), "%"),
+  paste0("I2 = ", format_number(100 * meta_LR_positive$I2, 1), "%"),
   paste0("Heterogeneity p-value = ", format_p(meta_LR_positive$pval.Q)),
   "",
   "Pooled negative likelihood ratio:",
@@ -532,7 +534,7 @@ report_lines <- c(
     "LR- = ", format_number(pooled_LR_negative),
     " (95% CI ", format_number(pooled_LR_negative_lower), "-", format_number(pooled_LR_negative_upper), ")"
   ),
-  paste0("I2 = ", format_number(meta_LR_negative$I2, 1), "%"),
+  paste0("I2 = ", format_number(100 * meta_LR_negative$I2, 1), "%"),
   paste0("Heterogeneity p-value = ", format_p(meta_LR_negative$pval.Q)),
   "",
   "Fagan nomogram results (point estimate + 95% CI):"
