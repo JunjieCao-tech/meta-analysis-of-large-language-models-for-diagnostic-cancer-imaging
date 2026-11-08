@@ -26,9 +26,11 @@ library(ggplot2)
 # ------------------------------------------------------------
 # 2. Paths and colour palette
 # ------------------------------------------------------------
-input_file <- "C:/Users/30399/Desktop/LLM/main.txt"
+input_file <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
 
-output_dir <- "C:/Users/30399/Desktop/LLM/11.Bayesian_Meta_Sensitivity_Specificity"
+output_dir <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "11.Bayesian_Meta_Sensitivity_Specificity")
 
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
@@ -175,6 +177,7 @@ set.seed(20260806)
 jags_fit <- jags.model(
   file = textConnection(jags_model),
   data = jags_data,
+  inits = lapply(seq_len(4), function(i) list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 20260806L + i)),
   n.chains = 4,
   n.adapt = 5000
 )
@@ -272,8 +275,8 @@ plot_posterior_density <- function(values, outcome_name, colour_value, output_fi
   )
 
   subtitle_text <- sprintf(
-    "Posterior median = %.3f (95%% CrI %.3f to %.3f)",
-    summary_values["Posterior_Median"],
+    "Posterior mean = %.3f (95%% CrI %.3f to %.3f)",
+    summary_values["Posterior_Mean"],
     summary_values["CrI_2.5"],
     summary_values["CrI_97.5"]
   )
@@ -288,7 +291,7 @@ plot_posterior_density <- function(values, outcome_name, colour_value, output_fi
       linewidth = 1
     ) +
     geom_vline(
-      xintercept = summary_values["Posterior_Median"],
+      xintercept = summary_values["Posterior_Mean"],
       colour = pal[1],
       linewidth = 0.9,
       linetype = "dashed"
@@ -392,19 +395,13 @@ for (j in seq_len(n_draws_sroc)) {
 
   sroc_matrix[j, ] <- predicted_sensitivity
 
-  # Trapezoidal numerical integration over increasing FPR:
-  # AUC is therefore always non-negative.
-  auc_values[j] <- sum(
-    diff(fpr_grid) *
-      (
-        head(predicted_sensitivity, -1) +
-          tail(predicted_sensitivity, -1)
-      ) / 2
-  )
+  # Full AUC, independent of the grid used to display the SROC curve.
+  auc_values[j] <- sroc_full_auc(mu_sens, mu_fpr, beta_sroc)
 }
 
 sroc_summary <- data.frame(
   False_Positive_Rate = fpr_grid,
+  Mean_Sensitivity = rowMeans(t(sroc_matrix)),
   Median_Sensitivity = apply(sroc_matrix, 2, median),
   Lower_95CrI = apply(sroc_matrix, 2, quantile, probs = 0.025),
   Upper_95CrI = apply(sroc_matrix, 2, quantile, probs = 0.975)
@@ -436,8 +433,8 @@ write.csv(
 
 # Short subtitle prevents text truncation in the PDF
 auc_subtitle <- sprintf(
-  "Posterior AUC = %.3f (95%% CrI %.3f to %.3f)",
-  auc_summary["Posterior_Median"],
+  "Posterior mean AUC = %.3f (95%% CrI %.3f to %.3f)",
+  auc_summary["Posterior_Mean"],
   auc_summary["CrI_2.5"],
   auc_summary["CrI_97.5"]
 )
@@ -457,7 +454,7 @@ p_sroc <- ggplot() +
     data = sroc_summary,
     aes(
       x = False_Positive_Rate,
-      y = Median_Sensitivity
+      y = Mean_Sensitivity
     ),
     colour = pal[1],
     linewidth = 1.2
