@@ -47,9 +47,11 @@ library(ggplot2)
 # ------------------------------------------------------------
 # 2. Paths and colour palette
 # ------------------------------------------------------------
-input_file <- "C:/Users/30399/Desktop/LLM/main.txt"
+input_file <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
 
-output_dir <- "C:/Users/30399/Desktop/LLM/Model_switch_sensitivity"
+output_dir <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "9.Model_switch_sensitivity")
 
 if (!dir.exists(output_dir)) {
   dir.create(
@@ -234,8 +236,9 @@ extract_metaprop_result <- function(
     
     I_Squared_Percent = meta_object$I2 * 100,
     
-    Q_Statistic = meta_object$Q,
-    Q_P_Value = meta_object$pval.Q,
+    # GLMM returns Wald and LRT Q statistics; use Wald for one model/outcome row.
+    Q_Statistic = as.numeric(meta_object$Q[1L]),
+    Q_P_Value = as.numeric(meta_object$pval.Q[1L]),
     
     Correlation = NA_real_,
     
@@ -272,18 +275,18 @@ create_result_string <- function(
 # Specificity = 1 - False Positive Rate
 
 dat$Logit_Sensitivity <- log(
-  (dat$TP_CC + 0.5) / (dat$FN_CC + 0.5)
+  dat$TP_CC / dat$FN_CC
 )
 
-dat$Var_Logit_Sensitivity <- 1 / (dat$TP_CC + 0.5) +
-  1 / (dat$FN_CC + 0.5)
+dat$Var_Logit_Sensitivity <- 1 / dat$TP_CC +
+  1 / dat$FN_CC
 
 dat$Logit_FPR <- log(
-  (dat$FP_CC + 0.5) / (dat$TN_CC + 0.5)
+  dat$FP_CC / dat$TN_CC
 )
 
-dat$Var_Logit_FPR <- 1 / (dat$FP_CC + 0.5) +
-  1 / (dat$TN_CC + 0.5)
+dat$Var_Logit_FPR <- 1 / dat$FP_CC +
+  1 / dat$TN_CC
 
 bivariate_long <- rbind(
   data.frame(
@@ -888,7 +891,7 @@ write.csv(
 # ------------------------------------------------------------
 # 11. Prepare plotting data
 # ------------------------------------------------------------
-plot_model_results <- all_model_results[
+plot_model_results <- rbind(bivariate_results, univariate_re_results, fixed_effect_results)[
   ,
   c(
     "Outcome",
@@ -970,6 +973,17 @@ difference_plot_data$Comparison <- factor(
     "Fixed Effect - Univariate RE"
   )
 )
+
+# Figure 4D retains the original two-outcome, fixed-minus-bivariate comparison.
+# Use unrounded fitted values for plotting and the final three-decimal labels.
+difference_plot_data <- droplevels(difference_plot_data[
+  difference_plot_data$Comparison == "Fixed Effect - Bivariate RE" &
+    difference_plot_data$Outcome %in% c("Sensitivity", "Specificity"),
+])
+difference_plot_data$Difference <-
+  fixed_effect_results$Pooled_Estimate[match(as.character(difference_plot_data$Outcome), fixed_effect_results$Outcome)] -
+  bivariate_results$Pooled_Estimate[match(as.character(difference_plot_data$Outcome), bivariate_results$Outcome)]
+stopifnot(nrow(difference_plot_data) == 2L, all(is.finite(difference_plot_data$Difference)))
 
 # ------------------------------------------------------------
 # 12. Create model-switch sensitivity plots with readable labels
