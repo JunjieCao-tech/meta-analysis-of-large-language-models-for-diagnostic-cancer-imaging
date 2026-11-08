@@ -19,10 +19,10 @@ suppressPackageStartupMessages({
 })
 
 # -------------------- 2. Paths --------------------
-work_dir <- "C:/Users/30399/Desktop/LLM"
+work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 
 if (!dir.exists(work_dir)) {
-  work_dir <- "C:/Users/30399/OneDrive/Desktop/LLM"
+  work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 }
 
 if (!dir.exists(work_dir)) {
@@ -31,6 +31,8 @@ if (!dir.exists(work_dir)) {
 
 out_dir <- file.path(work_dir, "5.Subgroup")
 input_file <- file.path(work_dir, "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
 
 if (!dir.exists(out_dir)) {
   dir.create(out_dir, recursive = TRUE)
@@ -383,6 +385,7 @@ run_forest <- function(d, outcome_name, subgroup_var, filename) {
       data = d,
       sm = "PLOGIT",
       method = "GLMM",
+      method.ci = "WS", # Wilson intervals for individual studies only
       common = TRUE,
       random = TRUE,
       subgroup = Subgroup,
@@ -396,6 +399,18 @@ run_forest <- function(d, outcome_name, subgroup_var, filename) {
   if (is.null(meta_obj)) {
     return(NULL)
   }
+
+  # Clamp Wilson bounds before logit conversion: floating-point arithmetic at
+  # event=n may otherwise produce an upper bound infinitesimally above one.
+  # These are study display fields only; pooled GLMM estimates stay unchanged.
+  z <- qnorm(0.975)
+  p_raw <- d$event / d$total
+  denom <- 1 + z^2 / d$total
+  center <- (p_raw + z^2 / (2 * d$total)) / denom
+  half <- z * sqrt(p_raw * (1-p_raw) / d$total + z^2 / (4*d$total^2)) / denom
+  meta_obj$lower <- qlogis(pmax(0, pmin(1, center-half)))
+  meta_obj$upper <- qlogis(pmax(0, pmin(1, center+half)))
+  stopifnot(!anyNA(meta_obj$lower), !anyNA(meta_obj$upper))
   
   actual_filename <- open_pdf(
     filename = filename,
@@ -525,6 +540,7 @@ for (outcome_name in outcomes) {
           data = sub_d,
           sm = "PLOGIT",
           method = "GLMM",
+      method.ci = "WS", # Wilson intervals for individual studies only
           common = FALSE,
           random = TRUE,
           method.random.ci = "HK",
@@ -548,7 +564,7 @@ for (outcome_name in outcomes) {
           Pooled_random_percent = plogis(sub_meta$TE.random) * 100,
           Lower_95CI_percent = plogis(sub_meta$lower.random) * 100,
           Upper_95CI_percent = plogis(sub_meta$upper.random) * 100,
-          I2_percent = sub_meta$I2,
+          I2_percent = sub_meta$I2 * 100,
           Tau2 = sub_meta$tau2,
           stringsAsFactors = FALSE
         )
@@ -648,10 +664,10 @@ suppressPackageStartupMessages({
 })
 
 # -------------------- 2. Working directory --------------------
-work_dir <- "C:/Users/30399/Desktop/LLM"
+work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 
 if (!dir.exists(work_dir)) {
-  work_dir <- "C:/Users/30399/OneDrive/Desktop/LLM"
+  work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 }
 
 if (!dir.exists(work_dir)) {
@@ -1237,9 +1253,9 @@ fit_one_subgroup <- function(
   }
   
   fpr_grid <- seq(
-    0.001,
-    0.999,
-    length.out = 1000
+    0.0001,
+    0.9999,
+    length.out = 5000
   )
   
   sroc_dat <- data.frame(
@@ -1256,19 +1272,7 @@ fit_one_subgroup <- function(
     stringsAsFactors = FALSE
   )
   
-  AUC <- sum(
-    diff(sroc_dat$FPR) *
-      (
-        head(
-          sroc_dat$Sensitivity,
-          -1
-        ) +
-          tail(
-            sroc_dat$Sensitivity,
-            -1
-          )
-      ) / 2
-  )
+  AUC <- sroc_full_auc(mu_sens, mu_fpr, sroc_slope)
   
   confidence_ellipse <- ellipse_points(
     center = c(
@@ -1710,7 +1714,7 @@ plot_subgroup_sroc <- function(
       size = text_size_14,
       color = "#222222",
       fill = alpha("white", 0.96),
-      label.size = 0.35,
+      linewidth = 0.35,
       label.r = grid::unit(
         0.18,
         "lines"
