@@ -10,8 +10,10 @@ if (!requireNamespace("ggplot2", quietly = TRUE)) {
 library(ggplot2)
 
 # -------------------- 2. 设置路径 --------------------
-input_file <- "C:/Users/30399/Desktop/LLM/main.txt"
-output_dir <- "C:/Users/30399/Desktop/LLM/7.Deeks"
+input_file <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
+output_dir <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "7.Deeks")
 
 if (!file.exists(input_file)) {
   stop("未找到输入文件：", input_file)
@@ -332,7 +334,7 @@ deeks_plot <- ggplot(
     size = 4.2,
     colour = pal[1],
     fill = "white",
-    label.size = 0.35,
+    linewidth = 0.35,
     label.r = grid::unit(0.15, "lines")
   ) +
   scale_size_continuous(
