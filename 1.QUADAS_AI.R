@@ -6,10 +6,8 @@
 # ---------- 0. Install and load packages ----------
 pkgs <- c("dplyr", "tidyr", "ggplot2", "stringr")
 
-new_pkgs <- pkgs[!pkgs %in% rownames(installed.packages())]
-if (length(new_pkgs) > 0) {
-  install.packages(new_pkgs, repos = "https://cloud.r-project.org")
-}
+missing_pkgs <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_pkgs)) stop("Required packages are missing: ", paste(missing_pkgs, collapse = ", "))
 
 library(dplyr)
 library(tidyr)
@@ -17,12 +15,10 @@ library(ggplot2)
 library(stringr)
 
 # ---------- 1. File path ----------
-work_dir <- "C:/Users/30399/Desktop/LLM"
+work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis")
 data_file <- file.path(work_dir, "main.txt")
-
-# If your Desktop is under OneDrive, change the path to:
-# work_dir <- "C:/Users/30399/OneDrive/Desktop/LLM"
-# data_file <- file.path(work_dir, "main.txt")
+output_dir <- file.path(work_dir, "1.QUADAS_AI")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ---------- 2. Read data ----------
 dat <- read.delim(
@@ -34,8 +30,19 @@ dat <- read.delim(
   stringsAsFactors = FALSE
 )
 
-# Extract: Author + Year + last 7 QUADAS-AI columns
-quadas <- dat[, c(1, 2, (ncol(dat) - 6):ncol(dat))]
+# Select assessment columns by name. Trailing metadata are not QUADAS ratings.
+rating_columns <- c("RoB_患者选择", "RoB_待评试验(LLM)", "RoB_金标准", "RoB_流程与时序",
+                    "App_患者选择", "App_待评试验", "App_金标准")
+required_columns <- c("第一作者", "年份", rating_columns, "Study_ID", "Analysis_role")
+if (!all(required_columns %in% names(dat))) stop("Missing required assessment columns")
+dat <- dat[dat$Analysis_role == "Primary", , drop = FALSE]
+if (nrow(dat) != 23L || anyDuplicated(dat$Study_ID)) stop("Expected 23 distinct primary studies")
+valid <- c("low", "high", "unclear")
+for (field in rating_columns) {
+  if (anyNA(dat[[field]]) || any(!tolower(trimws(dat[[field]])) %in% valid))
+    stop("Missing or invalid QUADAS rating in column: ", field)
+}
+quadas <- dat[, c("第一作者", "年份", rating_columns), drop = FALSE]
 
 names(quadas) <- c(
   "Author", "Year",
@@ -112,6 +119,10 @@ quadas_long <- quadas %>%
   )
 
 # Check data quality
+stopifnot(nrow(quadas_long) == 23L * 7L, !anyNA(quadas_long$Judgement))
+domain_levels <- c("Patient Selection", "Index Test", "Reference Standard", "Flow and Timing")
+quadas_long$Domain <- factor(quadas_long$Domain, levels = domain_levels)
+write.csv(quadas, file.path(output_dir, "QUADAS_AI_study_ratings.csv"), row.names = FALSE, fileEncoding = "UTF-8")
 print(table(quadas_long$Judgement, useNA = "ifany"))
 
 # ---------- 4. Colours ----------
@@ -154,7 +165,8 @@ p_traffic <- ggplot(
     drop = FALSE
   ) +
   labs(
-    title = "QUADAS-AI Risk of Bias Assessment",
+    title = "QUADAS-AI Risk of Bias and Applicability Assessment",
+    subtitle = "23 primary studies",
     x = NULL,
     y = NULL
   ) +
@@ -205,11 +217,11 @@ p_traffic <- ggplot(
     )
   )
 
-print(p_traffic)
+if (interactive()) print(p_traffic)
 
 ggsave(
   filename = file.path(
-    work_dir,
+    output_dir,
     "QUADAS_AI_traffic_light_circle_Arial14.png"
   ),
   plot = p_traffic,
@@ -229,6 +241,10 @@ summary_data <- quadas_long %>%
   mutate(Percentage = 100 * n / sum(n)) %>%
   ungroup()
 
+stopifnot(all(summary_data %>% group_by(Assessment, Domain) %>% summarise(Total = sum(n), .groups = "drop") %>% pull(Total) == 23L))
+summary_data$Domain <- factor(summary_data$Domain, levels = rev(domain_levels))
+write.csv(summary_data, file.path(output_dir, "QUADAS_AI_domain_summary.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+
 p_summary <- ggplot(
   summary_data,
   aes(x = Percentage, y = Domain, fill = Judgement)
@@ -238,11 +254,7 @@ p_summary <- ggplot(
     colour = "white",
     linewidth = 0.45
   ) +
-  facet_grid(
-    . ~ Assessment,
-    scales = "free_y",
-    space = "free_y"
-  ) +
+  facet_wrap(vars(Assessment), nrow = 1, scales = "free_y") +
   scale_fill_manual(
     values = risk_colours,
     name = NULL,
@@ -255,7 +267,8 @@ p_summary <- ggplot(
     expand = c(0, 0)
   ) +
   labs(
-    title = "QUADAS-AI Risk of Bias Summary",
+    title = "QUADAS-AI Risk of Bias and Applicability Summary",
+    subtitle = "23 primary studies; each domain uses the same denominator",
     x = "Percentage of Studies",
     y = NULL
   ) +
@@ -302,11 +315,11 @@ p_summary <- ggplot(
     plot.margin = margin(15, 20, 15, 20)
   )
 
-print(p_summary)
+if (interactive()) print(p_summary)
 
 ggsave(
   filename = file.path(
-    work_dir,
+    output_dir,
     "QUADAS_AI_summary_bar_Arial14.png"
   ),
   plot = p_summary,
@@ -317,5 +330,10 @@ ggsave(
 )
 
 cat("\nDone. Figures saved to:\n")
-cat(file.path(work_dir, "QUADAS_AI_traffic_light_circle_Arial14.png"), "\n")
-cat(file.path(work_dir, "QUADAS_AI_summary_bar_Arial14.png"), "\n")
+cat(file.path(output_dir, "QUADAS_AI_traffic_light_circle_Arial14.png"), "\n")
+cat(file.path(output_dir, "QUADAS_AI_summary_bar_Arial14.png"), "\n")
+# Vector outputs support assembly and verification of Supplementary Figure 1.
+ggsave(file.path(output_dir, "QUADAS_AI_summary_bar_Arial14.pdf"), p_summary,
+       width = 14, height = 7, device = cairo_pdf, bg = "white")
+ggsave(file.path(output_dir, "QUADAS_AI_traffic_light_circle_Arial14.pdf"), p_traffic,
+       width = 14, height = max(10, length(study_order) * 0.55), device = cairo_pdf, bg = "white")
