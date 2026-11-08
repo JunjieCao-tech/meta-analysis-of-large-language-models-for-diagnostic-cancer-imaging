@@ -14,3 +14,4 @@ showtext 0.9-7
 sysfonts 0.8.9
 scales 1.4.0
 Matrix 1.7-5
+readxl 1.4.5
