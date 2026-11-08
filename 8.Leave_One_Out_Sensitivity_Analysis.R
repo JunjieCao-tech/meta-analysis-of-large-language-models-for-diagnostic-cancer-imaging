@@ -17,8 +17,10 @@ library(metafor)
 library(ggplot2)
 
 # -------------------- 2. 设置路径 --------------------
-input_file <- "C:/Users/30399/Desktop/LLM/main.txt"
-output_dir <- "C:/Users/30399/Desktop/LLM/8.Leave_One_Out_Sensitivity_Analysis"
+input_file <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "main.txt")
+source(file.path(dirname(input_file), "0.Verify_Main_Data.R"), encoding = "UTF-8")
+assert_main_data(input_file)
+output_dir <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "8.Leave_One_Out_Sensitivity_Analysis")
 
 if (!file.exists(input_file)) {
   stop("未找到原始文件：", input_file)
@@ -127,18 +129,24 @@ meta_dat$FN_adj <- ifelse(meta_dat$Zero_cell, meta_dat$FN + 0.5, meta_dat$FN)
 meta_dat$TN_adj <- ifelse(meta_dat$Zero_cell, meta_dat$TN + 0.5, meta_dat$TN)
 
 # -------------------- 6. 计算各研究诊断指标 --------------------
-meta_dat$Sensitivity <- with(meta_dat, TP_adj / (TP_adj + FN_adj))
-meta_dat$Specificity <- with(meta_dat, TN_adj / (TN_adj + FP_adj))
+meta_dat$Sensitivity <- with(meta_dat, TP / (TP + FN))
+meta_dat$Specificity <- with(meta_dat, TN / (TN + FP))
 meta_dat$Accuracy <- with(
   meta_dat,
-  (TP_adj + TN_adj) / (TP_adj + FP_adj + FN_adj + TN_adj)
+  (TP + TN) / (TP + FP + FN + TN)
 )
-meta_dat$PPV <- with(meta_dat, TP_adj / (TP_adj + FP_adj))
-meta_dat$NPV <- with(meta_dat, TN_adj / (TN_adj + FN_adj))
+meta_dat$PPV <- with(meta_dat, TP / (TP + FP))
+meta_dat$NPV <- with(meta_dat, TN / (TN + FN))
 
 # -------------------- 7. 随机效应比例 Meta 分析函数 --------------------
 run_proportion_meta <- function(events, totals) {
   
+  # Match the metric-specific zero correction used in the Figure 2 models.
+  failures <- totals - events
+  zero <- events == 0 | failures == 0
+  events <- events + ifelse(zero, 0.5, 0)
+  failures <- failures + ifelse(zero, 0.5, 0)
+  totals <- events + failures
   proportion <- events / totals
   
   yi <- log(proportion / (1 - proportion))
@@ -160,7 +168,7 @@ run_proportion_meta <- function(events, totals) {
     pooled = plogis(pooled_logit),
     lower = plogis(ci_lower_logit),
     upper = plogis(ci_upper_logit),
-    I2 = as.numeric(fit$I2),
+    I2 = 100 * max(0, (fit$QE - (fit$k - 1)) / fit$QE),
     tau2 = as.numeric(fit$tau2),
     Q = as.numeric(fit$QE),
     Q_p = as.numeric(fit$QEp)
@@ -171,29 +179,29 @@ run_proportion_meta <- function(events, totals) {
 run_full_meta_analysis <- function(dat_sub) {
   
   sen_fit <- run_proportion_meta(
-    events = dat_sub$TP_adj,
-    totals = dat_sub$TP_adj + dat_sub$FN_adj
+    events = dat_sub$TP,
+    totals = dat_sub$TP + dat_sub$FN
   )
   
   spe_fit <- run_proportion_meta(
-    events = dat_sub$TN_adj,
-    totals = dat_sub$TN_adj + dat_sub$FP_adj
+    events = dat_sub$TN,
+    totals = dat_sub$TN + dat_sub$FP
   )
   
   acc_fit <- run_proportion_meta(
-    events = dat_sub$TP_adj + dat_sub$TN_adj,
-    totals = dat_sub$TP_adj + dat_sub$FP_adj +
-      dat_sub$FN_adj + dat_sub$TN_adj
+    events = dat_sub$TP + dat_sub$TN,
+    totals = dat_sub$TP + dat_sub$FP +
+      dat_sub$FN + dat_sub$TN
   )
   
   ppv_fit <- run_proportion_meta(
-    events = dat_sub$TP_adj,
-    totals = dat_sub$TP_adj + dat_sub$FP_adj
+    events = dat_sub$TP,
+    totals = dat_sub$TP + dat_sub$FP
   )
   
   npv_fit <- run_proportion_meta(
-    events = dat_sub$TN_adj,
-    totals = dat_sub$TN_adj + dat_sub$FN_adj
+    events = dat_sub$TN,
+    totals = dat_sub$TN + dat_sub$FN
   )
   
   data.frame(
@@ -531,6 +539,8 @@ effect_plot <- ggplot(
     ),
     axis.text = element_text(colour = "black"),
     axis.text.x = element_text(size = 10),
+    panel.spacing.x = grid::unit(1.2, "lines"),
+    plot.margin = margin(12, 30, 12, 12),
     strip.background = element_rect(
       fill = pal[5],
       colour = pal[4]
@@ -623,6 +633,8 @@ i2_plot <- ggplot(
     ),
     axis.text = element_text(colour = "black"),
     axis.text.x = element_text(size = 10),
+    panel.spacing.x = grid::unit(1.2, "lines"),
+    plot.margin = margin(12, 30, 12, 12),
     strip.background = element_rect(
       fill = pal[5],
       colour = pal[4]
