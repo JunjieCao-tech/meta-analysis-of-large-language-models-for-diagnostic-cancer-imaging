@@ -1,8 +1,12 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # Sensitivity analysis for overlapping Chen cohorts in Table 2
 # Primary: Chen 2024 [N=116] (32, 48, 9, 27), excluding red Chen 2025 [N=106]
 # Alternative: Chen 2025 [N=106] (26, 26, 11, 43), excluding Chen 2024 [N=116]
-# Both analyses contain 23 independent study rows.
+# Both analyses contain 20 independent study rows.
 # ============================================================
 
 # Some Windows Rscript sessions start in the C locale and cannot resolve
@@ -72,7 +76,7 @@ dat <- data.frame(
 dat$Author <- gsub("†", "", dat$Author, fixed = TRUE)
 # Exclude text footnotes, which have no year or four-cell table.
 dat <- dat[complete.cases(dat[, c("Year", "TP", "FP", "FN", "TN")]), ]
-if (nrow(dat) != 24L) stop("Expected 24 Table 2 study rows; found ", nrow(dat))
+if (nrow(dat) != 21L) stop("Expected 21 Table 2 study rows; found ", nrow(dat))
 if (any(as.matrix(dat[, c("TP", "FP", "FN", "TN")]) < 0) ||
     any(as.matrix(dat[, c("TP", "FP", "FN", "TN")]) !=
         floor(as.matrix(dat[, c("TP", "FP", "FN", "TN")])))) {
@@ -103,7 +107,7 @@ main_counts <- data.frame(
   FN = as.numeric(main[["FN"]]), TN = as.numeric(main[["TN"]])
 )
 base_raw <- dat[-chen_red, ]
-if (nrow(main_counts) != 23L ||
+if (nrow(main_counts) != 20L ||
     !identical(sort(paste(gsub("[^a-z0-9]", "", tolower(main[[1]])), main[[2]], count_key(main_counts))),
                sort(paste(gsub("[^a-z0-9]", "", tolower(base_raw$Author)), base_raw$Year, count_key(base_raw))))) {
   stop("The primary Table 2 counts do not match main.txt; resolve inputs first")
@@ -127,9 +131,9 @@ if (any(dat$Total <= 0)) stop("A study has no observations")
 
 primary <- dat[-chen_red, ]
 replacement <- dat[-chen_primary, ]
-if (nrow(primary) != 23L || nrow(replacement) != 23L ||
+if (nrow(primary) != 20L || nrow(replacement) != 20L ||
     anyDuplicated(primary$Study) || anyDuplicated(replacement$Study)) {
-  stop("Each scenario must contain 23 uniquely labelled studies")
+  stop("Each scenario must contain 20 uniquely labelled studies")
 }
 
 adjust_zero_cells <- function(x) {
@@ -275,12 +279,12 @@ make_plot <- function(method, filename, height) {
     # Numeric estimates sit in a dedicated column beyond the plotting panel.
     ggplot2::geom_text(
       ggplot2::aes(x = 1.045, y = y, label = Value_label),
-      hjust = 0, size = 4, family = "Arial", show.legend = FALSE
+      hjust = 0, size = 14 / ggplot2::.pt, family = "Arial", show.legend = FALSE
     ) +
     ggplot2::annotate(
       "text", x = 1.045, y = length(metrics) + 0.48,
       label = "Estimate (95% CI)", hjust = 0,
-      size = 4, family = "Arial", fontface = "bold", colour = pal[1]
+      size = 14 / ggplot2::.pt, family = "Arial", fontface = "bold", colour = pal[1]
     ) +
     ggplot2::scale_colour_manual(values = scenario_colours) +
     ggplot2::scale_x_continuous(
@@ -294,14 +298,16 @@ make_plot <- function(method, filename, height) {
     ggplot2::coord_cartesian(xlim = c(0, 1), clip = "off") +
     ggplot2::labs(
       title = "Overlapping Chen cohort: replacement sensitivity analysis",
-      subtitle = paste(method, "| 23 studies in each scenario"),
+      subtitle = paste(method, "| 20 studies in each scenario"),
       x = "Pooled estimate (95% CI)", y = NULL, colour = NULL
     ) +
     ggplot2::theme_classic(base_size = 14, base_family = "Arial") +
     ggplot2::theme(
-      plot.title = ggplot2::element_text(colour = pal[1], face = "bold"),
+      plot.title = ggplot2::element_text(colour = pal[1], face = "bold", size = 14),
       legend.position = "bottom",
-      axis.text.y = ggplot2::element_text(colour = "#222222"),
+      axis.text = ggplot2::element_text(size = 14),
+      axis.text.y = ggplot2::element_text(colour = "#222222", size = 14),
+      legend.text = ggplot2::element_text(size = 14),
       plot.margin = ggplot2::margin(12, 290, 12, 12, unit = "pt")
     )
   grDevices::cairo_pdf(file.path(output_dir, filename),
@@ -314,9 +320,9 @@ make_plot("Univariate REML", "Overlap_Sensitivity_Five_Metrics.pdf", 7.2)
 
 report <- c(
   "OVERLAPPING-COHORT SENSITIVITY ANALYSIS",
-  "Data: table 2.txt (24 rows; one overlapping Chen row per scenario)",
-  "Primary: Chen 2024 [N=116], TP/FP/FN/TN = 32/48/9/27; 23 studies",
-  "Replacement: Chen 2025 [N=106], TP/FP/FN/TN = 26/26/11/43; 23 studies",
+  "Data: table 2.txt (21 rows; one overlapping Chen row per scenario)",
+  "Primary: Chen 2024 [N=116], TP/FP/FN/TN = 32/48/9/27; 20 studies",
+  "Replacement: Chen 2025 [N=106], TP/FP/FN/TN = 26/26/11/43; 20 studies",
   "The Chen 2026 cohort remains in both scenarios.",
   "The primary Table 2 four-cell tables match main.txt exactly.",
   "Zero cells: add 0.5 to all four cells of affected studies for bivariate logit estimation.",
