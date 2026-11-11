@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 rm(list = ls())
 options(stringsAsFactors = FALSE)
 options(warn = 1)
@@ -57,7 +61,7 @@ open_pdf <- function(filename, width = 12, height = 10) {
     filename = filename,
     width = width,
     height = height,
-    family = "sans",
+    family = "Arial",
     pointsize = 14,
     onefile = TRUE
   )
@@ -87,7 +91,7 @@ dat_raw <- tryCatch(
     header = TRUE,
     sep = "\t",
     quote = "\"",
-    fileEncoding = "UTF-8-BOM",
+    fileEncoding = "GB18030",
     check.names = FALSE,
     stringsAsFactors = FALSE
   ),
@@ -176,7 +180,7 @@ meta_LR_positive <- meta::metagen(
   studlab = dat$Study,
   data = dat,
   sm = "RR",
-  common = FALSE,
+  common = TRUE,
   random = TRUE,
   method.tau = "REML",
   method.random.ci = "HK",
@@ -189,7 +193,7 @@ meta_LR_negative <- meta::metagen(
   studlab = dat$Study,
   data = dat,
   sm = "RR",
-  common = FALSE,
+  common = TRUE,
   random = TRUE,
   method.tau = "REML",
   method.random.ci = "HK",
@@ -205,6 +209,16 @@ pooled_LR_negative       <- exp(meta_LR_negative$TE.random)
 pooled_LR_negative_lower <- exp(meta_LR_negative$lower.random)
 pooled_LR_negative_upper <- exp(meta_LR_negative$upper.random)
 
+lr_model_results <- do.call(rbind, lapply(list(`LR+` = meta_LR_positive, `LR-` = meta_LR_negative), function(m) {
+  data.frame(Model = c("Fixed effect", "Random effects"),
+             Estimate = exp(c(m$TE.common, m$TE.random)),
+             Lower_95CI = exp(c(m$lower.common, m$lower.random)),
+             Upper_95CI = exp(c(m$upper.common, m$upper.random)))
+}))
+lr_model_results$Outcome <- rep(c("LR+", "LR-"), each = 2)
+write.csv(lr_model_results, file.path(output_dir, "Likelihood_Ratio_Model_Results.csv"),
+          row.names = FALSE, fileEncoding = "UTF-8")
+
 # 10. Forest plot function
 # 文字在左边，森林图在最右边
 draw_forest_plot <- function(meta_object, output_file, xlab, effect_label) {
@@ -216,7 +230,7 @@ draw_forest_plot <- function(meta_object, output_file, xlab, effect_label) {
   
   meta::forest(
     meta_object,
-    common = FALSE,
+    common = TRUE,
     random = TRUE,
     prediction = TRUE,
     backtransf = TRUE,
@@ -224,23 +238,29 @@ draw_forest_plot <- function(meta_object, output_file, xlab, effect_label) {
     xlab = xlab,
     smlab = "",
     
-    leftcols = c("studlab", "effect", "ci", "w.random"),
-    leftlabs = c("Study", effect_label, "95% CI", "Weight"),
+    leftcols = c("studlab", "effect", "ci", "w.common", "w.random"),
+    leftlabs = c("Study", effect_label, "95% CI", "Weight (fixed)", "Weight (random)"),
     
     rightcols = FALSE,
     rightlabs = FALSE,
     
     ref = 1,
+    at = c(0.01, 0.1, 1, 10, 100),
+    colgap.left = grid::unit(5, "mm"),
+    weight.study = "random",
     col.square = pal[1],
     col.square.lines = pal[1],
     col.random = pal[1],
+    col.common = pal[1],
+    col.diamond.common = pal[3],
+    col.diamond.lines.common = pal[1],
     col.diamond.random = pal[2],
     col.diamond.lines.random = pal[1],
     col.predict = pal[4],
     
     fontsize = 14,
     fs.study = 14, fs.axis = 14, fs.heading = 14,
-    fs.random = 14, fs.predict = 14, fs.hetstat = 12, fs.xlab = 14,
+    fs.common = 14, fs.random = 14, fs.predict = 14, fs.hetstat = 14, fs.xlab = 14,
     
     ff.study = "plain", ff.axis = "plain", ff.heading = "bold",
     ff.random = "bold", ff.predict = "bold", ff.xlab = "plain",
@@ -278,12 +298,12 @@ calculate_posttest_probability <- function(pretest_probability, likelihood_ratio
   posttest_odds / (1 + posttest_odds)
 }
 
-draw_probability_axis <- function(x_position, axis_title) {
+draw_probability_axis <- function(x_position, axis_title, reverse = FALSE, labels_right = FALSE) {
   probability_ticks <- c(
     0.001, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.80, 0.90,
     0.95, 0.98, 0.99, 0.995, 0.999
   )
-  y_ticks <- probability_to_log_odds(probability_ticks)
+  y_ticks <- probability_to_log_odds(probability_ticks) * if (reverse) -1 else 1
   segments(
     x0 = x_position, y0 = min(y_ticks),
     x1 = x_position, y1 = max(y_ticks),
@@ -296,14 +316,14 @@ draw_probability_axis <- function(x_position, axis_title) {
   )
   tick_labels <- paste0(formatC(probability_ticks * 100, format = "fg", digits = 3), "%")
   text(
-    x = x_position - 0.030, y = y_ticks,
-    labels = tick_labels, adj = 1,
-    cex = 0.78, family = font_family
+    x = x_position + if (labels_right) 0.030 else -0.030, y = y_ticks,
+    labels = tick_labels, adj = if (labels_right) 0 else 1,
+    cex = 1, family = font_family
   )
   text(
     x = x_position, y = max(y_ticks) + 0.78,
     labels = axis_title,
-    font = 2, cex = 1.05, family = font_family
+    font = 2, cex = 1, family = font_family
   )
 }
 
@@ -318,7 +338,7 @@ draw_fagan_nomogram <- function(pretest_probability, output_file) {
   posttest_negative_lower <- calculate_posttest_probability(pretest_probability, pooled_LR_negative_lower)
   posttest_negative_upper <- calculate_posttest_probability(pretest_probability, pooled_LR_negative_upper)
   
-  open_pdf(output_file, width = 14, height = 10)
+  open_pdf(output_file, width = 18, height = 16)
   par(family = font_family, mar = c(5, 4, 5, 4))
   
   probability_ticks <- c(
@@ -341,35 +361,37 @@ draw_fagan_nomogram <- function(pretest_probability, output_file) {
   x_lr <- 0.50
   x_post <- 0.82
   
-  draw_probability_axis(x_position = x_pre, axis_title = "Pre-test probability")
-  draw_probability_axis(x_position = x_post, axis_title = "Post-test probability")
+  draw_probability_axis(x_position = x_pre, axis_title = "Pre-test probability", reverse = TRUE)
+  draw_probability_axis(x_position = x_post, axis_title = "Post-test probability", labels_right = TRUE)
   
   # LR axis
   lr_ticks <- c(0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 1, 2, 5, 10, 20, 50, 100)
-  lr_y <- log(lr_ticks)
-  segments(x0 = x_lr, y0 = min(lr_y), x1 = x_lr, y1 = max(lr_y), lwd = 1.8, col = "#222222")
+  # Equal axis spacing, reversed pre-test log odds, and half-scale log LR
+  # ensure the three values for any diagnostic scenario lie on one line.
+  lr_y <- log(lr_ticks) / 2
+  segments(x0 = x_lr, y0 = y_min, x1 = x_lr, y1 = y_max, lwd = 1.8, col = "#222222")
   segments(x0 = x_lr - 0.018, y0 = lr_y, x1 = x_lr + 0.018, y1 = lr_y, lwd = 0.8, col = "#222222")
   text(
-    x = x_lr - 0.030, y = lr_y,
-    labels = formatC(lr_ticks, format = "fg", digits = 3), adj = 1,
-    cex = 0.78, family = font_family
+    x = x_lr + 0.030, y = lr_y,
+    labels = formatC(lr_ticks, format = "fg", digits = 3), adj = 0,
+    cex = 1, family = font_family
   )
   text(
-    x = x_lr, y = max(lr_y) + 0.78,
+    x = x_lr, y = y_max + 0.78,
     labels = "Likelihood ratio",
-    font = 2, cex = 1.05, family = font_family
+    font = 2, cex = 1, family = font_family
   )
   
   title(
     main = paste0("Fagan Nomogram: Pre-test Probability ", round(pretest_probability * 100), "%"),
-    cex.main = 1.30, font.main = 2, family = font_family
+    cex.main = 1, font.main = 2, family = font_family
   )
   
   # Convert all needed quantities to log-odds Y
-  y_pre <- probability_to_log_odds(pretest_probability)
+  y_pre <- -probability_to_log_odds(pretest_probability)
   
-  y_lr_positive <- log(pooled_LR_positive)
-  y_lr_negative <- log(pooled_LR_negative)
+  y_lr_positive <- log(pooled_LR_positive) / 2
+  y_lr_negative <- log(pooled_LR_negative) / 2
   
   y_post_positive <- probability_to_log_odds(posttest_positive)
   y_post_negative <- probability_to_log_odds(posttest_negative)
@@ -379,6 +401,13 @@ draw_fagan_nomogram <- function(pretest_probability, output_file) {
   
   y_post_negative_lower <- probability_to_log_odds(posttest_negative_lower)
   y_post_negative_upper <- probability_to_log_odds(posttest_negative_upper)
+  check_lr <- c(pooled_LR_positive, pooled_LR_negative,
+                pooled_LR_positive_lower, pooled_LR_positive_upper,
+                pooled_LR_negative_lower, pooled_LR_negative_upper)
+  stopifnot(abs(x_lr - (x_pre + x_post) / 2) < 1e-12,
+            all(abs(log(check_lr) / 2 -
+              (y_pre + probability_to_log_odds(
+                calculate_posttest_probability(pretest_probability, check_lr))) / 2) < 1e-10))
   
   # 95% CI bands (filled polygons)
   polygon(
@@ -397,23 +426,23 @@ draw_fagan_nomogram <- function(pretest_probability, output_file) {
   # CI band borders
   lines(
     x = c(x_pre, x_lr, x_post),
-    y = c(y_pre, log(pooled_LR_positive_lower), y_post_positive_lower),
+    y = c(y_pre, log(pooled_LR_positive_lower) / 2, y_post_positive_lower),
     col = pal[1], lwd = 2, lty = 3
   )
   lines(
     x = c(x_pre, x_lr, x_post),
-    y = c(y_pre, log(pooled_LR_positive_upper), y_post_positive_upper),
+    y = c(y_pre, log(pooled_LR_positive_upper) / 2, y_post_positive_upper),
     col = pal[1], lwd = 2, lty = 3
   )
   
   lines(
     x = c(x_pre, x_lr, x_post),
-    y = c(y_pre, log(pooled_LR_negative_lower), y_post_negative_lower),
+    y = c(y_pre, log(pooled_LR_negative_lower) / 2, y_post_negative_lower),
     col = pal[3], lwd = 2, lty = 3
   )
   lines(
     x = c(x_pre, x_lr, x_post),
-    y = c(y_pre, log(pooled_LR_negative_upper), y_post_negative_upper),
+    y = c(y_pre, log(pooled_LR_negative_upper) / 2, y_post_negative_upper),
     col = pal[3], lwd = 2, lty = 3
   )
   
@@ -441,23 +470,23 @@ draw_fagan_nomogram <- function(pretest_probability, output_file) {
   text(
     x = x_pre - 0.105, y = y_pre,
     labels = paste0("Pre-test: ", formatC(pretest_probability * 100, format = "f", digits = 1), "%"),
-    adj = 1, cex = 0.88, family = font_family
+    adj = 1, cex = 1, family = font_family
   )
   
   text(
-    x = x_post + 0.035, y = y_post_positive,
+    x = x_post - 0.035, y = y_post_positive + 1.70,
     labels = paste0("Positive test: ", formatC(posttest_positive * 100, format = "f", digits = 1), "%"),
-    adj = 0, cex = 0.88, col = pal[1], family = font_family
+    adj = 1, cex = 1, col = pal[1], family = font_family
   )
   
   text(
-    x = x_post + 0.035, y = y_post_negative,
+    x = x_post - 0.035, y = y_post_negative - 0.70,
     labels = paste0("Negative test: ", formatC(posttest_negative * 100, format = "f", digits = 1), "%"),
-    adj = 0, cex = 0.88, col = pal[3], family = font_family
+    adj = 1, cex = 1, col = pal[3], family = font_family
   )
   
   legend(
-    "bottom", inset = c(0, -0.16),
+    "bottom", inset = c(0, 0.01),
     legend = c(
       paste0(
         "LR+ = ", format_number(pooled_LR_positive),
@@ -469,11 +498,11 @@ draw_fagan_nomogram <- function(pretest_probability, output_file) {
       ),
       "95% CI band"
     ),
-    col = c(pal[1], pal[3], "grey40"),
+    col = c(pal[1], pal[3], pal[4]),
     lty = c(1, 2, 3),
     lwd = c(3, 3, 2),
     bty = "n",
-    cex = 0.95,
+    cex = 1,
     xpd = TRUE
   )
   
@@ -521,19 +550,23 @@ report_lines <- c(
   "",
   paste0("Number of included studies: ", nrow(dat)),
   "",
-  "Pooled positive likelihood ratio:",
+  "Pooled positive likelihood ratio (random effects; used in Fagan nomograms):",
   paste0(
     "LR+ = ", format_number(pooled_LR_positive),
     " (95% CI ", format_number(pooled_LR_positive_lower), "-", format_number(pooled_LR_positive_upper), ")"
   ),
+  paste0("Fixed effect LR+ = ", format_number(exp(meta_LR_positive$TE.common)),
+         " (95% CI ", format_number(exp(meta_LR_positive$lower.common)), "-", format_number(exp(meta_LR_positive$upper.common)), ")"),
   paste0("I2 = ", format_number(100 * meta_LR_positive$I2, 1), "%"),
   paste0("Heterogeneity p-value = ", format_p(meta_LR_positive$pval.Q)),
   "",
-  "Pooled negative likelihood ratio:",
+  "Pooled negative likelihood ratio (random effects; used in Fagan nomograms):",
   paste0(
     "LR- = ", format_number(pooled_LR_negative),
     " (95% CI ", format_number(pooled_LR_negative_lower), "-", format_number(pooled_LR_negative_upper), ")"
   ),
+  paste0("Fixed effect LR- = ", format_number(exp(meta_LR_negative$TE.common)),
+         " (95% CI ", format_number(exp(meta_LR_negative$lower.common)), "-", format_number(exp(meta_LR_negative$upper.common)), ")"),
   paste0("I2 = ", format_number(100 * meta_LR_negative$I2, 1), "%"),
   paste0("Heterogeneity p-value = ", format_p(meta_LR_negative$pval.Q)),
   "",
