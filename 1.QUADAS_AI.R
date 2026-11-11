@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # =========================================================
 # QUADAS-AI publication-style plots
 # Font: Arial, 14 pt
@@ -36,7 +40,7 @@ rating_columns <- c("RoB_患者选择", "RoB_待评试验(LLM)", "RoB_金标准"
 required_columns <- c("第一作者", "年份", rating_columns, "Study_ID", "Analysis_role")
 if (!all(required_columns %in% names(dat))) stop("Missing required assessment columns")
 dat <- dat[dat$Analysis_role == "Primary", , drop = FALSE]
-if (nrow(dat) != 23L || anyDuplicated(dat$Study_ID)) stop("Expected 23 distinct primary studies")
+if (nrow(dat) != 20L || anyDuplicated(dat$Study_ID)) stop("Expected 20 distinct primary studies")
 valid <- c("low", "high", "unclear")
 for (field in rating_columns) {
   if (anyNA(dat[[field]]) || any(!tolower(trimws(dat[[field]])) %in% valid))
@@ -62,6 +66,14 @@ quadas <- quadas %>%
   )
 
 study_order <- quadas$Study
+assessment_template <- data.frame(
+  study = study_order,
+  患者选择 = "", 指标试验_AI模型 = "", 参考标准 = "", 病例流程与时间间隔 = "",
+  患者选择_适用性 = "", 指标试验_适用性 = "", 参考标准_适用性 = "",
+  check.names = FALSE
+)
+write.csv(assessment_template, file.path(output_dir, "QUADAS_AI_assessment_template.csv"),
+          row.names = FALSE, fileEncoding = "UTF-8")
 
 # ---------- 3. Reshape and clean QUADAS-AI ratings ----------
 quadas_long <- quadas %>%
@@ -119,7 +131,7 @@ quadas_long <- quadas %>%
   )
 
 # Check data quality
-stopifnot(nrow(quadas_long) == 23L * 7L, !anyNA(quadas_long$Judgement))
+stopifnot(nrow(quadas_long) == 20L * 7L, !anyNA(quadas_long$Judgement))
 domain_levels <- c("Patient Selection", "Index Test", "Reference Standard", "Flow and Timing")
 quadas_long$Domain <- factor(quadas_long$Domain, levels = domain_levels)
 write.csv(quadas, file.path(output_dir, "QUADAS_AI_study_ratings.csv"), row.names = FALSE, fileEncoding = "UTF-8")
@@ -127,9 +139,9 @@ print(table(quadas_long$Judgement, useNA = "ifany"))
 
 # ---------- 4. Colours ----------
 risk_colours <- c(
-  "High" = "#D40000",
-  "Unclear" = "#E5E500",
-  "Low" = "#00B500"
+  "High" = "#3C3B8B",
+  "Unclear" = "#917BBD",
+  "Low" = "#E5CBE1"
 )
 
 # =========================================================
@@ -148,10 +160,11 @@ p_traffic <- ggplot(
     na.rm = TRUE
   ) +
   geom_text(
-    aes(label = Symbol),
+    aes(label = Symbol, colour = Judgement),
     fontface = "bold",
-    size = 4.5,
-    colour = "black",
+    family = "Arial",
+    size = 14 / ggplot2::.pt,
+    show.legend = FALSE,
     na.rm = TRUE
   ) +
   facet_grid(
@@ -164,9 +177,9 @@ p_traffic <- ggplot(
     name = NULL,
     drop = FALSE
   ) +
+  scale_colour_manual(values = c(High = "white", Unclear = "black", Low = "black"), guide = "none") +
   labs(
     title = "QUADAS-AI Risk of Bias and Applicability Assessment",
-    subtitle = "23 primary studies",
     x = NULL,
     y = NULL
   ) +
@@ -241,7 +254,7 @@ summary_data <- quadas_long %>%
   mutate(Percentage = 100 * n / sum(n)) %>%
   ungroup()
 
-stopifnot(all(summary_data %>% group_by(Assessment, Domain) %>% summarise(Total = sum(n), .groups = "drop") %>% pull(Total) == 23L))
+stopifnot(all(summary_data %>% group_by(Assessment, Domain) %>% summarise(Total = sum(n), .groups = "drop") %>% pull(Total) == 20L))
 summary_data$Domain <- factor(summary_data$Domain, levels = rev(domain_levels))
 write.csv(summary_data, file.path(output_dir, "QUADAS_AI_domain_summary.csv"), row.names = FALSE, fileEncoding = "UTF-8")
 
@@ -268,7 +281,7 @@ p_summary <- ggplot(
   ) +
   labs(
     title = "QUADAS-AI Risk of Bias and Applicability Summary",
-    subtitle = "23 primary studies; each domain uses the same denominator",
+    subtitle = "Each domain uses the same denominator",
     x = "Percentage of Studies",
     y = NULL
   ) +
