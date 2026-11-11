@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # Deeks Funnel Plot + Deeks Asymmetry Test
 # 适用于：GBK / GB18030 编码、制表符分隔的 main.txt
@@ -331,7 +335,7 @@ deeks_plot <- ggplot(
     hjust = 1,
     vjust = 1,
     family = "Arial",
-    size = 4.2,
+    size = 14 / ggplot2::.pt,
     colour = pal[1],
     fill = "white",
     linewidth = 0.35,
@@ -352,12 +356,12 @@ deeks_plot <- ggplot(
     plot.title = element_text(
       face = "bold",
       colour = pal[1],
-      size = 16,
+      size = 14,
       hjust = 0.5
     ),
     plot.subtitle = element_text(
       colour = pal[2],
-      size = 12,
+      size = 14,
       hjust = 0.5,
       margin = margin(b = 10)
     ),
@@ -365,7 +369,8 @@ deeks_plot <- ggplot(
       face = "bold",
       colour = pal[1]
     ),
-    axis.text = element_text(colour = "black"),
+    axis.text = element_text(colour = "black", size = 14),
+    legend.text = element_text(size = 14),
     legend.title = element_text(
       face = "bold",
       colour = pal[1]
