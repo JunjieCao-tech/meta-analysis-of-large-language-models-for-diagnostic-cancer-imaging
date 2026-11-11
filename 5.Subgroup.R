@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # Seven subgroup meta-analysis forest plots
 # Outcomes: Accuracy, NPV, PPV, Sensitivity, Specificity
@@ -121,7 +125,7 @@ dat0 <- tryCatch(
     header = TRUE,
     sep = "\t",
     quote = "\"",
-    fileEncoding = "UTF-8-BOM",
+    fileEncoding = "GB18030",
     check.names = FALSE,
     stringsAsFactors = FALSE
   ),
@@ -711,7 +715,7 @@ dat_raw <- tryCatch(
     sep = "\t",
     check.names = FALSE,
     stringsAsFactors = FALSE,
-    fileEncoding = "UTF-8-BOM"
+    fileEncoding = "GB18030"
   ),
   error = function(e) {
     read.delim(
@@ -1579,7 +1583,7 @@ plot_subgroup_sroc <- function(
       slope = 1,
       linetype = "dashed",
       linewidth = 0.7,
-      color = "grey65"
+      color = pal[4]
     ) +
     
     geom_polygon(
@@ -1819,7 +1823,7 @@ plot_subgroup_sroc <- function(
       plot.title = element_text(
         family = "Arial",
         face = "bold",
-        size = 16,
+        size = 14,
         hjust = 0.5,
         margin = margin(b = 5)
       ),
@@ -1900,7 +1904,7 @@ plot_subgroup_sroc <- function(
       
       plot.caption = element_text(
         family = "Arial",
-        size = 12,
+        size = 14,
         hjust = 0,
         color = "grey25",
         margin = margin(t = 12)
@@ -1987,12 +1991,12 @@ dat$Sample_size_group <- ifelse(
   dat$N <= median_N,
   paste0(
     "≤ Median (",
-    round(median_N),
+    format(median_N, trim = TRUE, scientific = FALSE),
     ")"
   ),
   paste0(
     "> Median (",
-    round(median_N),
+    format(median_N, trim = TRUE, scientific = FALSE),
     ")"
   )
 )
@@ -2111,12 +2115,12 @@ plot_subgroup_sroc(
   subgroup_levels = c(
     paste0(
       "≤ Median (",
-      round(median_N),
+      format(median_N, trim = TRUE, scientific = FALSE),
       ")"
     ),
     paste0(
       "> Median (",
-      round(median_N),
+      format(median_N, trim = TRUE, scientific = FALSE),
       ")"
     )
   ),
