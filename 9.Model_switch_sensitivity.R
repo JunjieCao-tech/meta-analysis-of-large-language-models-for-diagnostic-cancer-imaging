@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # Model-switch sensitivity analysis for diagnostic meta-analysis
 # Models:
@@ -1061,7 +1065,8 @@ p_model_comparison <- ggplot(
     ),
     colour = "black",
     hjust = 0,
-    size = 3.3,
+    size = 14/ggplot2::.pt,
+    family = "Arial",
     show.legend = FALSE
   ) +
   facet_wrap(
@@ -1097,12 +1102,13 @@ p_model_comparison <- ggplot(
     shape = "Model"
   ) +
   theme_classic(
-    base_size = 13,
-    base_family = "sans"
+    base_size = 14,
+    base_family = "Arial"
   ) +
   theme(
     plot.title = element_text(
       face = "bold",
+      size = 14,
       colour = pal[1],
       margin = margin(b = 5)
     ),
@@ -1118,12 +1124,15 @@ p_model_comparison <- ggplot(
     strip.text = element_text(
       face = "bold",
       colour = pal[1],
-      size = 12
+      size = 14
     ),
-    axis.title = element_text(face = "bold"),
+    axis.title = element_text(face = "bold", size = 14),
+    axis.text = element_text(size = 14),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
     axis.text.y = element_text(
       colour = "black",
-      size = 11
+      size = 14
     ),
     legend.position = "bottom",
     plot.margin = margin(15, 100, 15, 15)
@@ -1167,7 +1176,8 @@ p_difference_comparison <- ggplot(
     ),
     position = position_dodge(width = 0.75),
     colour = "black",
-    size = 3.3,
+    size = 14/ggplot2::.pt,
+    family = "Arial",
     show.legend = FALSE
   ) +
   scale_fill_manual(
@@ -1190,19 +1200,24 @@ p_difference_comparison <- ggplot(
     fill = "Comparison"
   ) +
   theme_classic(
-    base_size = 13,
-    base_family = "sans"
+    base_size = 14,
+    base_family = "Arial"
   ) +
   theme(
     plot.title = element_text(
       face = "bold",
+      size = 14,
       colour = pal[1]
     ),
     plot.subtitle = element_text(colour = "black"),
-    axis.title = element_text(face = "bold"),
+    axis.title = element_text(face = "bold", size = 14),
+    axis.text = element_text(size = 14),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
     axis.text.x = element_text(
       angle = 20,
-      hjust = 1
+      hjust = 1,
+      size = 14
     ),
     legend.position = "bottom",
     plot.margin = margin(20, 35, 20, 20)
@@ -1211,14 +1226,14 @@ p_difference_comparison <- ggplot(
 # ------------------------------------------------------------
 # Export both figures into one PDF
 # ------------------------------------------------------------
-pdf(
-  file = file.path(
+grDevices::cairo_pdf(
+  filename = file.path(
     output_dir,
     "Model_Switch_Sensitivity_Plots.pdf"
   ),
   width = 14,
   height = 13,
-  family = "sans"
+  family = "Arial"
 )
 
 print(p_model_comparison)
