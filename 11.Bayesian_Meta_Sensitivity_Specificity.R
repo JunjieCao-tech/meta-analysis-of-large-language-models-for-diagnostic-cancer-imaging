@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # Bayesian bivariate diagnostic meta-analysis
 # Outcomes: Sensitivity and Specificity only
@@ -303,11 +307,12 @@ plot_posterior_density <- function(values, outcome_name, colour_value, output_fi
       y = "Posterior density"
     ) +
     coord_cartesian(xlim = c(0, 1), clip = "off") +
-    theme_classic(base_size = 14, base_family = "sans") +
+    theme_classic(base_size = 14, base_family = "Arial") +
     theme(
-      plot.title = element_text(face = "bold", colour = pal[1]),
+      plot.title = element_text(face = "bold", colour = pal[1], size = 14),
       plot.subtitle = element_text(colour = "black"),
-      axis.title = element_text(face = "bold"),
+      axis.title = element_text(face = "bold", size = 14),
+      axis.text = element_text(size = 14),
       plot.margin = margin(16, 35, 16, 16)
     )
 
@@ -317,7 +322,7 @@ plot_posterior_density <- function(values, outcome_name, colour_value, output_fi
     width = 10,
     height = 7,
     units = "in",
-    device = "pdf",
+    device = grDevices::cairo_pdf,
     limitsize = FALSE
   )
 }
@@ -476,7 +481,7 @@ p_sroc <- ggplot() +
     intercept = 0,
     slope = 1,
     linetype = "dashed",
-    colour = "grey50",
+    colour = pal[4],
     linewidth = 0.7
   ) +
   labs(
@@ -496,18 +501,20 @@ p_sroc <- ggplot() +
     expand = expansion(mult = c(0.01, 0.01))
   ) +
   coord_equal(clip = "off") +
-  theme_classic(base_size = 14, base_family = "sans") +
+  theme_classic(base_size = 14, base_family = "Arial") +
   theme(
     plot.title = element_text(
       face = "bold",
       colour = pal[1],
+      size = 14,
       margin = margin(b = 6)
     ),
     plot.subtitle = element_text(
       colour = "black",
       margin = margin(b = 12)
     ),
-    axis.title = element_text(face = "bold"),
+  axis.title = element_text(face = "bold", size = 14),
+  axis.text = element_text(size = 14),
     plot.margin = margin(18, 42, 18, 18)
   )
 
@@ -520,27 +527,32 @@ ggsave(
   width = 11,
   height = 9,
   units = "in",
-  device = "pdf",
+  device = grDevices::cairo_pdf,
   limitsize = FALSE
 )
 
 # ------------------------------------------------------------
 # 11. MCMC trace plots
 # ------------------------------------------------------------
-pdf(
-  file = file.path(
+grDevices::cairo_pdf(
+  filename = file.path(
     output_dir,
     "Figure_MCMC_Trace_Plots.pdf"
   ),
-  width = 12,
-  height = 9,
-  family = "sans"
+  width = 18,
+  height = 14,
+  family = "Arial",
+  pointsize = 14
 )
+par(mfrow = c(3, 3), mar = c(4, 4, 3, 1))
+par(cex = 1, cex.main = 1, cex.axis = 1, cex.lab = 1)
 
 plot(
   mcmc_samples,
   trace = TRUE,
-  density = FALSE
+  density = FALSE,
+  auto.layout = FALSE,
+  col = pal[1:4]
 )
 
 dev.off()
@@ -572,3 +584,69 @@ sink()
 
 message("Analysis completed successfully.")
 message("Output directory: ", output_dir)
+
+# Prior sensitivity analysis: baseline and two alternative prior specifications.
+options(stringsAsFactors=FALSE)
+library(rjags); library(coda); library(ggplot2)
+root <- Sys.getenv('ANALYSIS_WORK_DIR', unset='E:/LLM/投稿版本/npj/R1/Statistical analysis')
+source(file.path(root,'0.Verify_Main_Data.R'), encoding='UTF-8')
+input <- file.path(root,'main.txt'); assert_main_data(input)
+d <- read.delim(input,fileEncoding='GB18030',check.names=FALSE)
+out <- file.path(root,'11.Bayesian_Meta_Sensitivity_Specificity')
+pal <- c('#3C3B8B','#6656A6','#917BBD','#B19CCB','#E5CBE1')
+priors <- data.frame(Prior=c('Baseline','Moderate','Regularized'), Mu_SD=c(sqrt(1000),2.5,1.5), SD_Max=c(5,3,2), Rho_Max=c(.95,.95,.75))
+model <- 'model { for(i in 1:N) { TP[i] ~ dbin(se[i],pos[i]); TN[i] ~ dbin(sp[i],neg[i]); logit(se[i]) <- theta[i,1]; logit(sp[i]) <- theta[i,2]; theta[i,1:2] ~ dmnorm(mu[],Omega[,]) } mu[1] ~ dnorm(0,precision); mu[2] ~ dnorm(0,precision); sd1 ~ dunif(0,sdmax); sd2 ~ dunif(0,sdmax); rho ~ dunif(-rhomax,rhomax); Omega[1,1] <- 1/(sd1*sd1*(1-rho*rho)); Omega[2,2] <- 1/(sd2*sd2*(1-rho*rho)); Omega[1,2] <- -rho/(sd1*sd2*(1-rho*rho)); Omega[2,1] <- Omega[1,2]; sensitivity <- ilogit(mu[1]); specificity <- ilogit(mu[2]) }'
+summary_draws <- function(x) c(mean=mean(x), median=median(x), lower=unname(quantile(x,.025)), upper=unname(quantile(x,.975)))
+results <- list(); diagnostics <- list(); curves <- list(); grid <- seq(.001,.999,length.out=200)
+for (i in seq_len(nrow(priors))) {
+ pr <- priors[i,]; data <- list(N=nrow(d),TP=d[[12]],TN=d[[15]],pos=d[[12]]+d[[14]],neg=d[[13]]+d[[15]],precision=1/pr$Mu_SD^2,sdmax=pr$SD_Max,rhomax=pr$Rho_Max)
+ if (i == 1) {
+   samples <- mcmc_samples
+   colnames(samples[[1]]) <- colnames(samples[[1]])
+   post0 <- as.matrix(samples)
+   result_map <- c(sensitivity='pooled_sensitivity',specificity='pooled_specificity')
+   for (n in names(result_map)) results[[length(results)+1]] <- data.frame(Prior=pr$Prior,Outcome=n,as.list(summary_draws(post0[,result_map[[n]]])))
+   results[[length(results)+1]] <- data.frame(Prior=pr$Prior,Outcome='AUC',as.list(summary_draws(auc_values)))
+   diagnostics[[i]] <- data.frame(Prior=pr$Prior,Parameter=diagnostic_table$Parameter,Rhat=diagnostic_table$Rhat,ESS=diagnostic_table$Effective_Sample_Size)
+   curves[[i]] <- data.frame(Prior=pr$Prior,FPR=fpr_grid,mean=sroc_summary$Mean_Sensitivity,lower=sroc_summary$Lower_95CrI,upper=sroc_summary$Upper_95CrI)
+   saveRDS(samples,file.path(out,paste0('Prior_',pr$Prior,'_samples.rds')))
+   next
+ }
+ fit <- jags.model(textConnection(model),data=data,inits=lapply(1:4,function(k) list(.RNG.name='base::Wichmann-Hill',.RNG.seed=20260806L+100L*i+k)),n.chains=4,n.adapt=0,quiet=TRUE)
+ adapted <- FALSE
+ for (attempt in 1:10) { adapted <- adapt(fit, n.iter=5000, end.adaptation=FALSE, progress.bar='none'); if (adapted) break }
+ if (!adapted) stop(paste('JAGS adaptation failed for prior',pr$Prior))
+ adapt(fit,n.iter=1,end.adaptation=TRUE,progress.bar='none')
+ update(fit,20000,progress.bar='none'); samples <- coda.samples(fit,c('mu','sd1','sd2','rho','sensitivity','specificity'),n.iter=40000,thin=10,progress.bar='none')
+ saveRDS(samples,file.path(out,paste0('Prior_',pr$Prior,'_samples.rds')))
+ rh <- gelman.diag(samples,multivariate=FALSE)$psrf; ess <- effectiveSize(samples); diagnostics[[i]] <- data.frame(Prior=pr$Prior,Parameter=rownames(rh),Rhat=rh[,1],ESS=ess[rownames(rh)])
+ post <- as.matrix(samples); set.seed(981+i); post <- post[sample(nrow(post),min(3000,nrow(post))),,drop=FALSE]
+ mat <- matrix(NA_real_,nrow(post),length(grid)); auc <- numeric(nrow(post))
+ for(j in seq_len(nrow(post))) { slope <- -post[j,'rho']*post[j,'sd1']/post[j,'sd2']; mat[j,] <- plogis(post[j,'mu[1]']+slope*(qlogis(grid)+post[j,'mu[2]'])); auc[j] <- sroc_full_auc(post[j,'mu[1]'],-post[j,'mu[2]'],slope) }
+ for(n in c('sensitivity','specificity','AUC')) { x <- if(n=='AUC') auc else as.matrix(samples)[,n]; results[[length(results)+1]] <- data.frame(Prior=pr$Prior,Outcome=n,as.list(summary_draws(x))) }
+ curves[[i]] <- data.frame(Prior=pr$Prior,FPR=grid,mean=colMeans(mat),lower=apply(mat,2,quantile,.025),upper=apply(mat,2,quantile,.975))
+}
+res <- do.call(rbind,results); diag <- do.call(rbind,diagnostics); cv <- do.call(rbind,curves)
+write.csv(priors,file.path(out,'Prior_Specifications.csv'),row.names=FALSE); write.csv(res,file.path(out,'Prior_Sensitivity_Results.csv'),row.names=FALSE); write.csv(diag,file.path(out,'Prior_Sensitivity_Diagnostics.csv'),row.names=FALSE); write.csv(cv,file.path(out,'Prior_Sensitivity_HSROC_Curves.csv'),row.names=FALSE)
+res$Prior <- factor(res$Prior, levels=rev(priors$Prior))
+res$Outcome <- factor(res$Outcome, levels=c('sensitivity','specificity','AUC'), labels=c('Sensitivity','Specificity','AUC'))
+res$label <- sprintf('%.3f (%.3f–%.3f)',res$mean,res$lower,res$upper)
+prior_colours <- setNames(pal[1:3],priors$Prior)
+p <- ggplot(res,aes(x=mean,y=Prior,colour=Prior))+geom_point(size=3)+
+  geom_errorbar(aes(xmin=lower,xmax=upper),width=.15,orientation='y')+
+  geom_text(aes(x=1.04,label=label),hjust=0,size=14/ggplot2::.pt,family='Arial',show.legend=FALSE)+
+  facet_wrap(~Outcome,ncol=1)+scale_colour_manual(values=prior_colours)+
+  scale_x_continuous(limits=c(0,1.60),breaks=seq(0,1,.2),expand=c(0,0))+
+  labs(x='Posterior mean and 95% credible interval',y='Prior specification')+
+  theme_classic(base_size=14,base_family='Arial')+theme(legend.position='none',text=element_text(size=14),strip.text=element_text(size=14),axis.text=element_text(size=14),axis.title=element_text(size=14))
+ggsave(file.path(out,'Prior_Sensitivity_Comparison.pdf'),p,width=11,height=9,device=cairo_pdf)
+auc_res <- res[res$Outcome=='AUC',]
+legend_labels <- setNames(sprintf('%s: AUC %.3f (%.3f–%.3f)',auc_res$Prior,auc_res$mean,auc_res$lower,auc_res$upper),as.character(auc_res$Prior))
+p2 <- ggplot(cv,aes(FPR,mean,colour=Prior,fill=Prior))+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=.12,colour=NA)+geom_line(linewidth=1)+
+  scale_colour_manual(values=prior_colours,breaks=priors$Prior,labels=legend_labels[priors$Prior])+
+  scale_fill_manual(values=prior_colours,breaks=priors$Prior,labels=legend_labels[priors$Prior])+
+  coord_equal(xlim=c(0,1),ylim=c(0,1))+labs(x='False positive rate',y='Sensitivity',colour='Posterior mean AUC (95% CrI)',fill='Posterior mean AUC (95% CrI)')+
+  theme_classic(base_size=14,base_family='Arial')+theme(text=element_text(size=14),axis.text=element_text(size=14),axis.title=element_text(size=14),legend.position='bottom',legend.text=element_text(size=14),legend.title=element_text(size=14))+
+  guides(colour=guide_legend(ncol=1),fill=guide_legend(ncol=1))
+ggsave(file.path(out,'Prior_Sensitivity_HSROC.pdf'),p2,width=10,height=10,device=cairo_pdf)
+if(any(!is.finite(diag$Rhat)) || any(diag$Rhat>=1.05) || any(diag$ESS<1000)) warning('Inspect prior sensitivity convergence diagnostics')
