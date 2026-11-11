@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # SROC plot: Bivariate random-effects diagnostic meta-analysis
 # Arial 14 pt; high-quality vector PDF
@@ -415,7 +419,7 @@ sroc_plot <- ggplot() +
     slope = 1,
     linetype = "dashed",
     linewidth = 0.7,
-    color = "grey65"
+    color = pal[4]
   ) +
   
   geom_polygon(
@@ -541,7 +545,7 @@ sroc_plot <- ggplot() +
     plot.title = element_text(
       family = "Arial",
       face = "bold",
-      size = 16,
+      size = 14,
       hjust = 0.5,
       margin = margin(b = 5)
     ),
@@ -604,7 +608,7 @@ sroc_plot <- ggplot() +
     
     plot.caption = element_text(
       family = "Arial",
-      size = 12,
+      size = 14,
       hjust = 0,
       color = "grey25",
       margin = margin(t = 12)
