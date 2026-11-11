@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # =========================================================
 # Main Meta-analysis of Diagnostic Performance
 # Outcomes: Sensitivity / Specificity / Accuracy / PPV / NPV
@@ -309,6 +313,7 @@ for (metric in names(analysis_list)) {
     fs.axis = 14,
     fs.heading = 14,
     fs.summary = 14,
+    fs.hetstat = 14,
     fs.xlab = 14,
     
     ff.study = "plain",
