@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # 逐一剔除研究敏感性分析（Leave-one-out）
 # 指标：Sensitivity、Specificity、Accuracy、NPV、PPV
@@ -31,7 +35,7 @@ if (!dir.exists(output_dir)) {
 }
 
 # 通用字体，避免 Arial 字体报错
-font_family <- "sans"
+font_family <- "Arial"
 
 # 紫色色板
 pal <- c("#3C3B8B", "#6656A6", "#917BBD", "#B19CCB", "#E5CBE1")
@@ -522,10 +526,11 @@ effect_plot <- ggplot(
     x = "Pooled estimate after excluding one study",
     y = "Excluded study"
   ) +
-  theme_classic(base_size = 13, base_family = font_family) +
+  theme_classic(base_size = 14, base_family = font_family) +
   theme(
     plot.title = element_text(
       face = "bold",
+      size = 14,
       colour = pal[1],
       hjust = 0.5
     ),
@@ -537,8 +542,8 @@ effect_plot <- ggplot(
       face = "bold",
       colour = pal[1]
     ),
-    axis.text = element_text(colour = "black"),
-    axis.text.x = element_text(size = 10),
+    axis.text = element_text(colour = "black", size = 14),
+    axis.text.x = element_text(size = 14),
     panel.spacing.x = grid::unit(1.2, "lines"),
     plot.margin = margin(12, 30, 12, 12),
     strip.background = element_rect(
@@ -546,7 +551,7 @@ effect_plot <- ggplot(
       colour = pal[4]
     ),
     strip.text = element_text(
-      face = "bold",
+      face = "bold", size = 14,
       colour = pal[1]
     )
   )
@@ -616,10 +621,11 @@ i2_plot <- ggplot(
     x = "I2 (%) after excluding one study",
     y = "Excluded study"
   ) +
-  theme_classic(base_size = 13, base_family = font_family) +
+  theme_classic(base_size = 14, base_family = font_family) +
   theme(
     plot.title = element_text(
       face = "bold",
+      size = 14,
       colour = pal[1],
       hjust = 0.5
     ),
@@ -631,8 +637,8 @@ i2_plot <- ggplot(
       face = "bold",
       colour = pal[1]
     ),
-    axis.text = element_text(colour = "black"),
-    axis.text.x = element_text(size = 10),
+    axis.text = element_text(colour = "black", size = 14),
+    axis.text.x = element_text(size = 14),
     panel.spacing.x = grid::unit(1.2, "lines"),
     plot.margin = margin(12, 30, 12, 12),
     strip.background = element_rect(
@@ -640,7 +646,7 @@ i2_plot <- ggplot(
       colour = pal[4]
     ),
     strip.text = element_text(
-      face = "bold",
+      face = "bold", size = 14,
       colour = pal[1]
     )
   )
