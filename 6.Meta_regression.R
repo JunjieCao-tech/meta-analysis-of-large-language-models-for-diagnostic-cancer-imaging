@@ -1,3 +1,7 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # Meta-regression Sensitivity Analysis
 # Seven subgroup factors, univariate and bivariate models
@@ -97,7 +101,7 @@ if (.Platform$OS.type == "windows") {
 font_family <- "Arial"
 
 text_size_14 <- 14 / .pt
-text_size_12 <- 12 / .pt
+text_size_12 <- 14 / .pt
 
 open_pdf <- function(filename, width, height) {
   grDevices::cairo_pdf(
@@ -150,7 +154,7 @@ dat_raw <- tryCatch(
     header = TRUE,
     sep = "\t",
     quote = "\"",
-    fileEncoding = "UTF-8-BOM",
+    fileEncoding = "GB18030",
     check.names = FALSE,
     stringsAsFactors = FALSE
   ),
@@ -315,15 +319,15 @@ median_N <- median(dat$N, na.rm = TRUE)
 
 dat$Sample_size_group <- ifelse(
   dat$N <= median_N,
-  paste0("≤ Median (", round(median_N), ")"),
-  paste0("> Median (", round(median_N), ")")
+  paste0("≤ Median (", format(median_N, trim = TRUE, scientific = FALSE), ")"),
+  paste0("> Median (", format(median_N, trim = TRUE, scientific = FALSE), ")")
 )
 
 dat$Sample_size_group <- factor(
   dat$Sample_size_group,
   levels = c(
-    paste0("≤ Median (", round(median_N), ")"),
-    paste0("> Median (", round(median_N), ")")
+    paste0("≤ Median (", format(median_N, trim = TRUE, scientific = FALSE), ")"),
+    paste0("> Median (", format(median_N, trim = TRUE, scientific = FALSE), ")")
   )
 )
 
@@ -1294,6 +1298,14 @@ for (subgroup_name in names(subgroups)) {
 bivariate_contribution_results <- bind_nonempty(
   bivariate_contribution_list
 )
+if (nrow(bivariate_contribution_results) > 0) {
+  # The seven fitted single-moderator omnibus tests form one correction family.
+  if (nrow(bivariate_contribution_results) != 7L || anyDuplicated(bivariate_contribution_results$Moderator))
+    stop("Expected seven distinct bivariate moderator tests for BH correction")
+  bivariate_contribution_results$QM_p_BH <- p.adjust(
+    bivariate_contribution_results$QM_p, method = "BH", n = 7L
+  )
+}
 
 bivariate_coefficient_results <- bind_nonempty(
   bivariate_coefficient_list
@@ -1464,7 +1476,7 @@ cat(
 )
 
 cat(
-  "QM_p < 0.05 suggests that the moderator is statistically associated with variation in diagnostic performance.\n"
+  "QM_p_BH is adjusted by Benjamini-Hochberg across the seven bivariate single-moderator omnibus tests. Interpret these tests as exploratory.\n"
 )
 
 cat(
@@ -1536,7 +1548,7 @@ if (nrow(univariate_contribution_results) > 0) {
     theme(
       plot.title = element_text(
         face = "bold",
-        size = 16,
+        size = 14,
         hjust = 0.5,
         colour = pal[1]
       ),
@@ -1591,11 +1603,14 @@ if (nrow(bivariate_contribution_results) > 0) {
       width = 0.65
     ) +
     geom_text(
-      aes(label = sprintf("%.1f", Joint_Pseudo_R2_percent)),
-      vjust = -0.35,
+      aes(label = ifelse(is.na(QM_p_BH),
+                         sprintf("%.1f%%\nBH-adjusted P: NA", Joint_Pseudo_R2_percent),
+                         sprintf("%.1f%%\nBH-adjusted P = %.3f", Joint_Pseudo_R2_percent, QM_p_BH))),
+      vjust = -0.2,
       size = 14 / .pt,
       family = font_family
     ) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.20))) +
     geom_hline(
       yintercept = 0,
       colour = "black",
@@ -1603,7 +1618,7 @@ if (nrow(bivariate_contribution_results) > 0) {
     ) +
     labs(
       title = "Moderator Contribution in the Bivariate Model",
-      subtitle = "Joint heterogeneity reduction for Sensitivity and Specificity",
+      subtitle = "Joint heterogeneity reduction; BH-adjusted omnibus P values across seven moderators",
       x = "Subgroup factor",
       y = "Joint Pseudo R² (%)"
     ) +
@@ -1614,12 +1629,13 @@ if (nrow(bivariate_contribution_results) > 0) {
     theme(
       plot.title = element_text(
         face = "bold",
-        size = 16,
+        size = 14,
         hjust = 0.5,
         colour = pal[1]
       ),
       plot.subtitle = element_text(
         hjust = 0.5,
+        size = 14,
         colour = pal[2]
       ),
       axis.title = element_text(
@@ -1689,7 +1705,7 @@ if (nrow(bivariate_contribution_results) > 0) {
     theme(
       plot.title = element_text(
         face = "bold",
-        size = 16,
+        size = 14,
         hjust = 0.5,
         colour = pal[1]
       ),
@@ -1770,12 +1786,12 @@ p_subgroup_auc <- ggplot(auc_plot_data,
        x = "Subgroup", y = "SROC AUC", fill = "Subgroup factor") +
   guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
   theme_classic(base_family = font_family, base_size = 14) +
-  theme(plot.title = element_text(face = "bold", size = 16, hjust = 0.5, colour = pal[1]),
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0.5, colour = pal[1]),
         plot.subtitle = element_text(hjust = 0.5, colour = pal[2]),
         axis.title = element_text(face = "bold", colour = pal[1]),
-        axis.text = element_text(colour = "black", size = 12),
-        legend.position = "bottom", legend.text = element_text(size = 12),
-        legend.title = element_text(size = 12),
+        axis.text = element_text(colour = "black", size = 14),
+        legend.position = "bottom", legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
         plot.margin = margin(15, 25, 15, 15))
 figure4_pdf <- file.path(output_dir, "Figure_4_Bivariate_SROC_AUC_by_Subgroup.pdf")
 figure4_png <- file.path(output_dir, "Figure_4_Bivariate_SROC_AUC_by_Subgroup.png")
