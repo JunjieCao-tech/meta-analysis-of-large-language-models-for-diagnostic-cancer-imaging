@@ -1,6 +1,10 @@
+# Prefer the analysis-local, version-controlled R library when available.
+local_analysis_lib <- file.path(Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/Statistical analysis"), "R_packages")
+if (dir.exists(local_analysis_lib)) .libPaths(c(local_analysis_lib, .libPaths()))
+
 # ============================================================
 # Sensitivity analysis for multiple observations from one patient
-# Source: main.txt and Table 1 and extraction with patient counts.xlsx
+# Source: main.txt and Table 1.xlsx
 # Output: E:/LLM/投稿版本/npj/R1/Statistical analysis/12.sensitivity analysis
 # ============================================================
 
@@ -14,7 +18,7 @@ work_dir <- Sys.getenv("ANALYSIS_WORK_DIR", unset = "E:/LLM/投稿版本/npj/R1/
 Encoding(work_dir) <- "UTF-8"
 main_file <- file.path(work_dir, "main.txt")
 table1_file <- Sys.getenv("ANALYSIS_TABLE1_FILE", unset = file.path(dirname(work_dir), "TABLES",
-                         "Table 1 and extraction with patient counts.xlsx"))
+                         "Table 1.xlsx"))
 output_dir <- Sys.getenv(
   "ANALYSIS_OUTPUT_DIR",
   unset = file.path(work_dir, "12.sensitivity analysis")
@@ -48,7 +52,7 @@ if (!all(required %in% names(table1))) {
   stop("Table 1 is missing: ", paste(setdiff(required, names(table1)), collapse = ", "))
 }
 table1 <- table1[!is.na(suppressWarnings(as.integer(table1[["No"]]))), ]
-if (nrow(table1) != 24L) stop("Expected 24 Table 1 rows including the red overlap row")
+if (nrow(table1) != 21L) stop("Expected 21 Table 1 rows including the red overlap row")
 
 normalize_author <- function(x) tolower(gsub("[^a-z0-9]", "", as.character(x)))
 main_key <- paste(normalize_author(main[[1]]), main[[2]], main[[11]], sep = "|")
@@ -81,11 +85,17 @@ parse_patient_count <- function(x) {
   if (is.na(x) || x == "" || grepl("^(NR|Not report)", x, ignore.case = TRUE)) {
     return(c(count = NA_real_, upper_bound = 0))
   }
-  upper <- grepl("^(\\u2264|<=|at most)", x, ignore.case = TRUE)
+  upper <- startsWith(x, "\u2264") || grepl("^(<=|at most)", x, ignore.case = TRUE)
   n <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", x)))
   if (!is.finite(n) || n <= 0) stop("Unrecognized patient count: ", x)
   c(count = n, upper_bound = as.integer(upper))
 }
+stopifnot(
+  parse_patient_count("\u22645")[["upper_bound"]] == 1,
+  parse_patient_count("<=5")[["upper_bound"]] == 1,
+  parse_patient_count("at most 5")[["upper_bound"]] == 1,
+  parse_patient_count("5")[["upper_bound"]] == 0
+)
 parsed <- t(vapply(dat$Patients_reported, parse_patient_count,
                    numeric(2)))
 dat$Unique_patients <- parsed[, "count"]
@@ -231,7 +241,7 @@ g <- ggplot2::ggplot(plot_dat,
   ggplot2::geom_point(ggplot2::aes(x = Estimate), size = 3.1) +
   ggplot2::geom_text(
     ggplot2::aes(x = 1.04, label = Label),
-    hjust = 0, size = 4, family = font_family, show.legend = FALSE
+    hjust = 0, size = 14 / ggplot2::.pt, family = font_family, show.legend = FALSE
   ) +
   ggplot2::facet_wrap(~ Metric, ncol = 1) +
   ggplot2::scale_colour_manual(values = colours, guide = "none") +
@@ -247,10 +257,11 @@ g <- ggplot2::ggplot(plot_dat,
   ) +
   ggplot2::theme_classic(base_size = 14, base_family = font_family) +
   ggplot2::theme(
-    plot.title = ggplot2::element_text(colour = pal[1], face = "bold"),
+    plot.title = ggplot2::element_text(colour = pal[1], face = "bold", size = 14),
     strip.background = ggplot2::element_blank(),
-    strip.text = ggplot2::element_text(colour = pal[1], face = "bold"),
-    axis.text.y = ggplot2::element_text(colour = "#222222"),
+    strip.text = ggplot2::element_text(colour = pal[1], face = "bold", size = 14),
+    axis.text = ggplot2::element_text(size = 14),
+    axis.text.y = ggplot2::element_text(colour = "#222222", size = 14),
     plot.margin = ggplot2::margin(14, 285, 14, 12, unit = "pt")
   )
 pdf_file <- file.path(output_dir, "Patient_Clustering_Sensitivity.pdf")
